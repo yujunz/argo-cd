@@ -1,0 +1,37 @@
+name: Custom
+on:
+  push:
+    branches:
+      - custom
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.12
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.12
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v1
+
+    - name: Login Docker Hub
+      env:
+        DOCKERHUB_ACCESS_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+      run: docker login --username yujunz --password ${DOCKERHUB_ACCESS_TOKEN}
+
+    - name: Get dependencies
+      run: |
+        sudo ./hack/install.sh dep-linux
+        dep ensure
+
+    - name: Build
+      env:
+        IMAGE_NAMESPACE: yujunz
+        DOCKER_PUSH: true
+        DOCKERFILE: custom
+      run: make
