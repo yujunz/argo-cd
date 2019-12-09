@@ -70,3 +70,24 @@ To learn more about Argo CD [go to the complete documentation](https://argoproj.
 1. [Argo CD - GitOps Continuous Delivery for Kubernetes](https://www.youtube.com/watch?v=aWDIQMbp1cc&feature=youtu.be&t=1m4s)
 1. [Introduction to Argo CD : Kubernetes DevOps CI/CD](https://www.youtube.com/watch?v=2WSJF7d8dUg&feature=youtu.be)
 
+## Custom tools in argocd image
+
+* kustomize plugins
+  * go-getter
+* helmfile
+* helm plugins
+  * helm-secret
+  * helm-s3
+  * helm-tiller
+
+## Develop
+
+```sh
+export GO111MODULE=off
+export IMAGE_NAMESPACE=yujunz
+export DOCKER_PUSH=true
+export DOCKERFILE=custom
+
+make dep
+make
+```

@@ -23,7 +23,7 @@ IMAGE_NAMESPACE?=
 # perform static compilation
 STATIC_BUILD?=true
 # build development images
-DEV_IMAGE?=false
+DOCKERFILE?=custom
 
 override LDFLAGS += \
   -X ${PACKAGE}.version=${VERSION} \
@@ -120,11 +120,20 @@ packr:
 	go build -o ${DIST_DIR}/packr ./vendor/github.com/gobuffalo/packr/packr/
 
 .PHONY: image
-ifeq ($(DEV_IMAGE), true)
+ifndef DOCKERFILE
+image:
+	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) .
+endif
+ifeq (${DOCKERFILE}, dev)
 # The "dev" image builds the binaries from the users desktop environment (instead of in Docker)
 # which speeds up builds. Dockerfile.dev needs to be copied into dist to perform the build, since
 # the dist directory is under .dockerignore.
-IMAGE_TAG="dev-$(shell git describe --always --dirty)"
+ifndef IMAGE_TAG
+IMAGE_TAG=dev-$(shell git describe --always --dirty)
+endif
+ifndef DEV_DOCKERFILE
+DEV_DOCKERFILE=Dockerfile.dev
+endif
 image: packr
 	docker build -t argocd-base --target argocd-base .
 	docker build -t argocd-ui --target argocd-ui .
@@ -134,11 +143,16 @@ image: packr
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-util ./cmd/argocd-util
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd ./cmd/argocd
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-darwin-amd64 ./cmd/argocd
-	cp Dockerfile.dev dist
-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f dist/Dockerfile.dev dist
-else
+	cp ${DEV_DOCKERFILE} dist/Dockerfile
+	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) dist
+endif
+ifeq (${DOCKERFILE}, custom)
+ifndef IMAGE_TAG
+IMAGE_TAG=custom-$(shell git describe --always --dirty)
+endif
 image:
-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) .
+	docker pull argoproj/argocd
+	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f custom.Dockerfile custom
 endif
 	@if [ "$(DOCKER_PUSH)" = "true" ] ; then docker push $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) ; fi
 

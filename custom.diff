@@ -1,0 +1,137 @@
+diff --git a/Makefile b/Makefile
+index d805ea77..97e7991c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -23,7 +23,7 @@ IMAGE_NAMESPACE?=
+ # perform static compilation
+ STATIC_BUILD?=true
+ # build development images
+-DEV_IMAGE?=false
++DOCKERFILE?=custom
+ 
+ override LDFLAGS += \
+   -X ${PACKAGE}.version=${VERSION} \
+@@ -120,11 +120,20 @@ packr:
+ 	go build -o ${DIST_DIR}/packr ./vendor/github.com/gobuffalo/packr/packr/
+ 
+ .PHONY: image
+-ifeq ($(DEV_IMAGE), true)
++ifndef DOCKERFILE
++image:
++	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) .
++endif
++ifeq (${DOCKERFILE}, dev)
+ # The "dev" image builds the binaries from the users desktop environment (instead of in Docker)
+ # which speeds up builds. Dockerfile.dev needs to be copied into dist to perform the build, since
+ # the dist directory is under .dockerignore.
+-IMAGE_TAG="dev-$(shell git describe --always --dirty)"
++ifndef IMAGE_TAG
++IMAGE_TAG=dev-$(shell git describe --always --dirty)
++endif
++ifndef DEV_DOCKERFILE
++DEV_DOCKERFILE=Dockerfile.dev
++endif
+ image: packr
+ 	docker build -t argocd-base --target argocd-base .
+ 	docker build -t argocd-ui --target argocd-ui .
+@@ -134,11 +143,16 @@ image: packr
+ 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-util ./cmd/argocd-util
+ 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd ./cmd/argocd
+ 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-darwin-amd64 ./cmd/argocd
+-	cp Dockerfile.dev dist
+-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f dist/Dockerfile.dev dist
+-else
++	cp ${DEV_DOCKERFILE} dist/Dockerfile
++	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) dist
++endif
++ifeq (${DOCKERFILE}, custom)
++ifndef IMAGE_TAG
++IMAGE_TAG=custom-$(shell git describe --always --dirty)
++endif
+ image:
+-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) .
++	docker pull argoproj/argocd
++	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f custom.Dockerfile custom
+ endif
+ 	@if [ "$(DOCKER_PUSH)" = "true" ] ; then docker push $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) ; fi
+ 
+diff --git a/README.md b/README.md
+index 26d65c0b..fad627fe 100644
+--- a/README.md
++++ b/README.md
+@@ -69,3 +69,24 @@ To learn more about Argo CD [go to the complete documentation](https://argoproj.
+ 1. [Argo CD - GitOps Continuous Delivery for Kubernetes](https://www.youtube.com/watch?v=aWDIQMbp1cc&feature=youtu.be&t=1m4s)
+ 1. [Introduction to Argo CD : Kubernetes DevOps CI/CD](https://www.youtube.com/watch?v=2WSJF7d8dUg&feature=youtu.be)
+ 
++## Custom tools in argocd image
++
++* kustomize plugins
++  * go-getter
++* helmfile
++* helm plugins
++  * helm-secret
++  * helm-s3
++  * helm-tiller
++
++## Develop
++
++```sh
++export GO111MODULE=off
++export IMAGE_NAMESPACE=yujunz
++export DOCKER_PUSH=true
++export DOCKERFILE=custom
++
++make dep
++make
++```
+diff --git a/custom.Dockerfile b/custom.Dockerfile
+new file mode 100644
+index 00000000..a2271da8
+--- /dev/null
++++ b/custom.Dockerfile
+@@ -0,0 +1,42 @@
++####################################################################################################
++# argocd with custom tools
++####################################################################################################
++FROM golang:1.13 as builder
++# Workaround for https://github.com/hashicorp/go-getter/issues/223
++RUN go get -v github.com/cheggaaa/pb
++RUN go get -v github.com/hashicorp/go-getter
++RUN go install github.com/hashicorp/go-getter/cmd/go-getter
++
++FROM argoproj/argocd
++
++USER root
++
++RUN apt-get update && \
++  apt-get install -y curl awscli gnupg procps && \
++  apt-get clean && \
++  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
++
++ENV SOPS_VERSION=3.4.0
++RUN curl -o /usr/local/bin/sops -L https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux && \
++  chmod +x /usr/local/bin/sops
++
++ENV HELMFILE_VERSION=v0.90.8
++RUN curl -o /usr/local/bin/helmfile -L https://github.com/roboll/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_linux_amd64 && \
++  chmod +x /usr/local/bin/helmfile
++
++USER argocd
++
++ENV XDG_CONFIG_HOME=/home/argocd/.config
++
++COPY --from=builder /go/bin/go-getter /usr/local/bin/
++
++RUN PLUGIN_GO_GETTER=plugin/someteam.example.com/v1/gogetter/GoGetter && \
++  curl --create-dirs --show-error --silent --location --output ${XDG_CONFIG_HOME}/kustomize/${PLUGIN_GO_GETTER} \
++  https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/${PLUGIN_GO_GETTER} && \
++  chmod +x ${XDG_CONFIG_HOME}/kustomize/${PLUGIN_GO_GETTER}
++
++RUN helm init --client-only && \
++  helm plugin install https://github.com/futuresimple/helm-secrets --version 2.0.2 && \
++  helm plugin install https://github.com/hypnoglow/helm-s3.git --version 0.8.0 && \
++  # helm-tiller plugin requires pkill (installed in procps)
++  helm plugin install https://github.com/rimusz/helm-tiller --version 0.8.3
+diff --git a/custom/.gitkeep b/custom/.gitkeep
+new file mode 100644
+index 00000000..e69de29b
