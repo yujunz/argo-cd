@@ -35,8 +35,8 @@ RUN PLUGIN_GO_GETTER=plugin/someteam.example.com/v1/gogetter/GoGetter && \
   https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/${PLUGIN_GO_GETTER} && \
   chmod +x ${XDG_CONFIG_HOME}/kustomize/${PLUGIN_GO_GETTER}
 
-RUN helm init --client-only && \
-  helm plugin install https://github.com/futuresimple/helm-secrets --version 2.0.2 && \
-  helm plugin install https://github.com/hypnoglow/helm-s3.git --version 0.8.0 && \
+RUN helm2 init --client-only && \
+  helm2 plugin install https://github.com/futuresimple/helm-secrets --version 2.0.2 && \
+  helm2 plugin install https://github.com/hypnoglow/helm-s3.git --version 0.8.0 && \
   # helm-tiller plugin requires pkill (installed in procps)
-  helm plugin install https://github.com/rimusz/helm-tiller --version 0.8.3
+  helm2 plugin install https://github.com/rimusz/helm-tiller --version 0.8.3
