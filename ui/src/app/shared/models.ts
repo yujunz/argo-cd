@@ -24,8 +24,8 @@ export interface SyncOperationResource {
 }
 
 export interface SyncStrategy {
-    apply: {force?: boolean} | null;
-    hook: {force?: boolean} | null;
+    apply?: {force?: boolean};
+    hook?: {force?: boolean};
 }
 
 export interface SyncOperation {
@@ -41,9 +41,14 @@ export interface RollbackOperation {
     dryRun: boolean;
 }
 
+export interface OperationInitiator {
+    username: string;
+    automated: boolean;
+}
+
 export interface Operation {
     sync: SyncOperation;
-    rollback: RollbackOperation;
+    initiatedBy: OperationInitiator;
 }
 
 export type OperationPhase = 'Running' | 'Error' | 'Failed' | 'Succeeded' | 'Terminating';
@@ -75,6 +80,7 @@ export interface RevisionMetadata {
     date: models.Time;
     tags?: string[];
     message?: string;
+    signatureInfo?: string;
 }
 
 export interface SyncOperationResult {
@@ -136,6 +142,16 @@ export interface ApplicationDestination {
      * Namespace overrides the environment namespace value in the ksonnet app.yaml
      */
     namespace: string;
+    /**
+     * Name of the destination cluster which can be used instead of server (url) field
+     */
+    name: string;
+}
+
+export interface OrphanedResource {
+    group: string;
+    kind: string;
+    name: string;
 }
 
 export interface ApplicationSource {
@@ -167,12 +183,14 @@ export interface ApplicationSourceHelm {
     valueFiles: string[];
     values?: string;
     parameters: HelmParameter[];
+    fileParameters: HelmFileParameter[];
 }
 
 export interface ApplicationSourceKustomize {
     namePrefix: string;
     nameSuffix: string;
     images: string[];
+    version: string;
 }
 
 export interface ApplicationSourceKsonnet {
@@ -206,8 +224,14 @@ export interface ApplicationSourceDirectory {
     jsonnet?: ApplicationSourceJsonnet;
 }
 
+export interface Automated {
+    prune: boolean;
+    selfHeal: boolean;
+}
+
 export interface SyncPolicy {
-    automated?: {prune: boolean; selfHeal: boolean};
+    automated?: Automated;
+    syncOptions?: string[];
 }
 
 export interface Info {
@@ -221,6 +245,7 @@ export interface ApplicationSpec {
     destination: ApplicationDestination;
     syncPolicy?: SyncPolicy;
     info?: Info[];
+    revisionHistoryLimit?: number;
 }
 
 /**
@@ -230,6 +255,7 @@ export interface RevisionHistory {
     id: number;
     revision: string;
     source: ApplicationSource;
+    deployStartedAt: models.Time;
     deployedAt: models.Time;
 }
 
@@ -299,6 +325,7 @@ export interface ResourceNode extends ResourceRef {
     networkingInfo?: ResourceNetworkingInfo;
     images?: string[];
     resourceVersion: string;
+    createdAt?: models.Time;
 }
 
 export interface ApplicationTree {
@@ -306,14 +333,18 @@ export interface ApplicationTree {
     orphanedNodes: ResourceNode[];
 }
 
-export interface ResourceDiff {
+export interface ResourceID {
     group: string;
     kind: string;
     namespace: string;
     name: string;
+}
+
+export interface ResourceDiff extends ResourceID {
     targetState: State;
     liveState: State;
-    diff: string;
+    predictedLiveState: State;
+    normalizedLiveState: State;
     hook: boolean;
 }
 
@@ -345,9 +376,17 @@ export interface ApplicationStatus {
     summary?: ApplicationSummary;
 }
 
+export interface JwtTokens {
+    items: JwtToken[];
+}
+export interface AppProjectStatus {
+    jwtTokensByRole: {[name: string]: JwtTokens};
+}
+
 export interface LogEntry {
     content: string;
     timeStamp: models.Time;
+    last: boolean;
 }
 
 // describes plugin settings
@@ -376,6 +415,9 @@ export interface AuthSettings {
         chatText: string;
     };
     plugins: Plugin[];
+    userLoginsDisabled: boolean;
+    kustomizeVersions: string[];
+    uiCssURL: string;
 }
 
 export interface UserInfo {
@@ -428,8 +470,28 @@ export interface RepoCredsList extends ItemsList<RepoCreds> {}
 export interface Cluster {
     name: string;
     server: string;
-    connectionState: ConnectionState;
-    serverVersion: string;
+    namespaces?: [];
+    refreshRequestedAt?: models.Time;
+    config?: {
+        awsAuthConfig?: {
+            clusterName: string;
+        };
+        execProviderConfig?: {
+            command: string;
+        };
+    };
+    info?: {
+        applicationsCount: number;
+        serverVersion: string;
+        connectionState: ConnectionState;
+        cacheInfo: ClusterCacheInfo;
+    };
+}
+
+export interface ClusterCacheInfo {
+    resourcesCount: number;
+    apisCount: number;
+    lastCacheSyncTime: models.Time;
 }
 
 export interface ClusterList extends ItemsList<Cluster> {}
@@ -480,12 +542,18 @@ export interface HelmParameter {
     value: string;
 }
 
+export interface HelmFileParameter {
+    name: string;
+    path: string;
+}
+
 export interface HelmAppSpec {
     name: string;
     path: string;
     valueFiles: string[];
     values?: string;
     parameters: HelmParameter[];
+    fileParameters: HelmFileParameter[];
 }
 
 export interface KustomizeAppSpec {
@@ -545,18 +613,22 @@ export interface ProjectRole {
     description: string;
     policies: string[];
     name: string;
-    jwtTokens: JwtToken[];
     groups: string[];
 }
 
 export interface JwtToken {
     iat: number;
     exp: number;
+    id: string;
 }
 
 export interface GroupKind {
     group: string;
     kind: string;
+}
+
+export interface ProjectSignatureKey {
+    keyID: string;
 }
 
 export interface ProjectSpec {
@@ -565,8 +637,11 @@ export interface ProjectSpec {
     description: string;
     roles: ProjectRole[];
     clusterResourceWhitelist: GroupKind[];
+    clusterResourceBlacklist: GroupKind[];
     namespaceResourceBlacklist: GroupKind[];
-    orphanedResources?: {warn?: boolean};
+    namespaceResourceWhitelist: GroupKind[];
+    signatureKeys: ProjectSignatureKey[];
+    orphanedResources?: {warn?: boolean; ignore: OrphanedResource[]};
     syncWindows?: SyncWindows;
 }
 
@@ -587,6 +662,7 @@ export interface Project {
     kind?: string;
     metadata: models.ObjectMeta;
     spec: ProjectSpec;
+    status: AppProjectStatus;
 }
 
 export type ProjectList = ItemsList<Project>;
@@ -625,4 +701,112 @@ export interface ApplicationSyncWindowState {
 
 export interface VersionMessage {
     Version: string;
+    BuildDate: string;
+    GoVersion: string;
+    Compiler: string;
+    Platform: string;
+    KsonnetVersion: string;
+    KustomizeVersion: string;
+    HelmVersion: string;
+    KubectlVersion: string;
+    JsonnetVersion: string;
 }
+
+export interface Token {
+    id: string;
+    issuedAt: number;
+    expiresAt: number;
+}
+
+export interface Account {
+    name: string;
+    enabled: boolean;
+    capabilities: string[];
+    tokens: Token[];
+}
+
+export interface GnuPGPublicKey {
+    keyID?: string;
+    fingerprint?: string;
+    subType?: string;
+    owner?: string;
+    keyData?: string;
+}
+
+export interface GnuPGPublicKeyList extends ItemsList<GnuPGPublicKey> {}
+
+// https://kubernetes.io/docs/reference/kubectl/overview/#resource-types
+
+export const ResourceKinds = [
+    'ANY',
+    'Binding',
+    'ComponentStatus',
+    'ConfigMap',
+    'Endpoints',
+    'LimitRange',
+    'Namespace',
+    'Node',
+    'PersistentVolumeClaim',
+    'PersistentVolume',
+    'Pod',
+    'PodTemplate',
+    'ReplicationController',
+    'ResourceQuota',
+    'Secret',
+    'ServiceAccount',
+    'Service',
+    'MutatingWebhookConfiguration',
+    'ValidatingWebhookConfiguration',
+    'CustomResourceDefinition',
+    'APIService',
+    'ControllerRevision',
+    'DaemonSet',
+    'Deployment',
+    'ReplicaSet',
+    'StatefulSet',
+    'TokenReview',
+    'LocalSubjectAccessReview',
+    'SelfSubjectAccessReview',
+    'SelfSubjectRulesReview',
+    'SubjectAccessReview',
+    'HorizontalPodAutoscaler',
+    'CronJob',
+    'Job',
+    'CertificateSigningRequest',
+    'Lease',
+    'Event',
+    'Ingress',
+    'NetworkPolicy',
+    'PodDisruptionBudget',
+    'ClusterRoleBinding',
+    'ClusterRole',
+    'RoleBinding',
+    'Role',
+    'PriorityClass',
+    'CSIDriver',
+    'CSINode',
+    'StorageClass',
+    'Volume'
+];
+
+export const Groups = [
+    'admissionregistration.k8s.io',
+    'apiextensions.k8s.io',
+    'apiregistration.k8s.io',
+    'apps',
+    'authentication.k8s.io',
+    'authorization.k8s.io',
+    'autoscaling',
+    'batch',
+    'certificates.k8s.io',
+    'coordination.k8s.io',
+    'events.k8s.io',
+    'extensions',
+    'networking.k8s.io',
+    'node.k8s.io',
+    'policy',
+    'rbac.authorization.k8s.io',
+    'scheduling.k8s.io',
+    'stable.example.com',
+    'storage.k8s.io'
+];

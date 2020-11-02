@@ -4,6 +4,8 @@ import (
 	"github.com/ghodss/yaml"
 	"golang.org/x/net/context"
 
+	sessionmgr "github.com/argoproj/argo-cd/util/session"
+
 	settingspkg "github.com/argoproj/argo-cd/pkg/apiclient/settings"
 	"github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/util/settings"
@@ -11,14 +13,18 @@ import (
 
 // Server provides a Settings service
 type Server struct {
-	mgr *settings.SettingsManager
+	mgr           *settings.SettingsManager
+	authenticator Authenticator
+	disableAuth   bool
+}
+
+type Authenticator interface {
+	Authenticate(ctx context.Context) (context.Context, error)
 }
 
 // NewServer returns a new instance of the Settings service
-func NewServer(mgr *settings.SettingsManager) *Server {
-	return &Server{
-		mgr: mgr,
-	}
+func NewServer(mgr *settings.SettingsManager, authenticator Authenticator, disableAuth bool) *Server {
+	return &Server{mgr: mgr, authenticator: authenticator, disableAuth: disableAuth}
 }
 
 // Get returns Argo CD settings
@@ -52,6 +58,26 @@ func (s *Server) Get(ctx context.Context, q *settingspkg.SettingsQuery) (*settin
 	if err != nil {
 		return nil, err
 	}
+	userLoginsDisabled := true
+	accounts, err := s.mgr.GetAccounts()
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		if account.Enabled && account.HasCapability(settings.AccountCapabilityLogin) {
+			userLoginsDisabled = false
+			break
+		}
+	}
+
+	kustomizeSettings, err := s.mgr.GetKustomizeSettings()
+	if err != nil {
+		return nil, err
+	}
+	var kustomizeVersions []string
+	for i := range kustomizeSettings.Versions {
+		kustomizeVersions = append(kustomizeVersions, kustomizeSettings.Versions[i].Name)
+	}
 
 	set := settingspkg.Settings{
 		URL:                argoCDSettings.URL,
@@ -69,7 +95,22 @@ func (s *Server) Get(ctx context.Context, q *settingspkg.SettingsQuery) (*settin
 			ChatUrl:  help.ChatURL,
 			ChatText: help.ChatText,
 		},
-		Plugins: plugins,
+		Plugins:            plugins,
+		UserLoginsDisabled: userLoginsDisabled,
+		KustomizeVersions:  kustomizeVersions,
+		UiCssURL:           argoCDSettings.UiCssURL,
+	}
+
+	if sessionmgr.LoggedIn(ctx) || s.disableAuth {
+		configManagementPlugins, err := s.mgr.GetConfigManagementPlugins()
+		if err != nil {
+			return nil, err
+		}
+		tools := make([]*v1alpha1.ConfigManagementPlugin, len(configManagementPlugins))
+		for i := range configManagementPlugins {
+			tools[i] = &configManagementPlugins[i]
+		}
+		set.ConfigManagementPlugins = tools
 	}
 	if argoCDSettings.DexConfig != "" {
 		var cfg settingspkg.DexConfig
@@ -108,5 +149,7 @@ func (s *Server) plugins() ([]*settingspkg.Plugin, error) {
 
 // AuthFuncOverride disables authentication for settings service
 func (s *Server) AuthFuncOverride(ctx context.Context, fullMethodName string) (context.Context, error) {
+	// this authenticates the user, but ignores any error, so that we have claims populated
+	ctx, _ = s.authenticator.Authenticate(ctx)
 	return ctx, nil
 }

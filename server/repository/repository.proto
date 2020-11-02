@@ -63,6 +63,8 @@ message RepoAccessQuery {
 	string type = 9;
 	// The name of the repo
 	string name = 10;
+	// Whether helm-oci support should be enabled for this repo
+	bool enableOci = 11;
 }
 
 message RepoResponse {}
@@ -91,6 +93,11 @@ service RepositoryService {
 		option deprecated = true;
 	}
 
+		// Get returns a repository or its credentials
+	rpc Get(RepoQuery) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository) {
+		option (google.api.http).get = "/api/v1/repositories/{repo}";
+	}
+
 	// ListRepositories gets a list of all configured repositories
 	rpc ListRepositories(RepoQuery) returns (github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.RepositoryList) {
 		option (google.api.http).get = "/api/v1/repositories";
@@ -109,6 +116,7 @@ service RepositoryService {
 		};
 	}
 
+	// GetHelmCharts returns list of helm charts in the specified repository
 	rpc GetHelmCharts(RepoQuery) returns (repository.HelmChartsResponse) {
 		option (google.api.http).get = "/api/v1/repositories/{repo}/helmcharts";
 	}

@@ -1,6 +1,8 @@
 package argo
 
 import (
+	"context"
+
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,7 +64,8 @@ func (l *AuditLogger) logEvent(objMeta ObjectRef, gvk schema.GroupVersionKind, i
 	t := metav1.Time{Time: time.Now()}
 	event := v1.Event{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%v.%x", objMeta.Name, t.UnixNano()),
+			Name:        fmt.Sprintf("%v.%x", objMeta.Name, t.UnixNano()),
+			Annotations: logFields,
 		},
 		Source: v1.EventSource{
 			Component: l.component,
@@ -72,7 +75,7 @@ func (l *AuditLogger) logEvent(objMeta ObjectRef, gvk schema.GroupVersionKind, i
 			Name:            objMeta.Name,
 			Namespace:       objMeta.Namespace,
 			ResourceVersion: objMeta.ResourceVersion,
-			APIVersion:      gvk.Version,
+			APIVersion:      gvk.GroupVersion().String(),
 			UID:             objMeta.UID,
 		},
 		FirstTimestamp: t,
@@ -83,7 +86,7 @@ func (l *AuditLogger) logEvent(objMeta ObjectRef, gvk schema.GroupVersionKind, i
 		Reason:         info.Reason,
 	}
 	logCtx.Info(message)
-	_, err := l.kIf.CoreV1().Events(objMeta.Namespace).Create(&event)
+	_, err := l.kIf.CoreV1().Events(objMeta.Namespace).Create(context.Background(), &event, metav1.CreateOptions{})
 	if err != nil {
 		logCtx.Errorf("Unable to create audit event: %v", err)
 		return

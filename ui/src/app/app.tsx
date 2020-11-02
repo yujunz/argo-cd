@@ -1,4 +1,4 @@
-import {DataLoader, Layout, NavigationManager, Notifications, NotificationsManager, PageContext, Popup, PopupManager, PopupProps} from 'argo-ui';
+import {DataLoader, Layout, NavigationManager, Notifications, NotificationsManager, PageContext, Popup, PopupManager, PopupProps, Tooltip} from 'argo-ui';
 import {createBrowserHistory} from 'history';
 import * as PropTypes from 'prop-types';
 import * as React from 'react';
@@ -9,6 +9,7 @@ import applications from './applications';
 import help from './help';
 import login from './login';
 import settings from './settings';
+import {VersionPanel} from './shared/components/version-info/version-info-panel';
 import {Provider} from './shared/context';
 import {services} from './shared/services';
 import requests from './shared/services/requests';
@@ -19,7 +20,7 @@ services.viewPreferences.init();
 const bases = document.getElementsByTagName('base');
 const base = bases.length > 0 ? bases[0].getAttribute('href') || '/' : '/';
 export const history = createBrowserHistory({basename: base});
-requests.setApiRoot(`${base}api/v1`);
+requests.setBaseHRef(base);
 
 const routes: {[path: string]: {component: React.ComponentType<RouteComponentProps<any>>; noLayout?: boolean}} = {
     '/login': {component: login.component as any, noLayout: true},
@@ -51,6 +52,8 @@ const navItems = [
         iconClassName: 'argo-icon-docs'
     }
 ];
+
+const versionLoader = services.version.version();
 
 async function isExpiredSSO() {
     try {
@@ -85,12 +88,12 @@ requests.onError.subscribe(async err => {
         if (isSSO) {
             window.location.href = `${basehref}/auth/login?return_url=${encodeURIComponent(location.href)}`;
         } else {
-            history.push(`${basehref}/login?return_url=${encodeURIComponent(location.href)}`);
+            history.push(`/login?return_url=${encodeURIComponent(location.href)}`);
         }
     }
 });
 
-export class App extends React.Component<{}, {popupProps: PopupProps; error: Error}> {
+export class App extends React.Component<{}, {popupProps: PopupProps; showVersionPanel: boolean; error: Error}> {
     public static childContextTypes = {
         history: PropTypes.object,
         apis: PropTypes.object
@@ -106,7 +109,7 @@ export class App extends React.Component<{}, {popupProps: PopupProps; error: Err
 
     constructor(props: {}) {
         super(props);
-        this.state = {popupProps: null, error: null};
+        this.state = {popupProps: null, error: null, showVersionPanel: false};
         this.popupManager = new PopupManager();
         this.notificationsManager = new NotificationsManager();
         this.navigationManager = new NavigationManager(history);
@@ -114,13 +117,14 @@ export class App extends React.Component<{}, {popupProps: PopupProps; error: Err
 
     public async componentDidMount() {
         this.popupManager.popupProps.subscribe(popupProps => this.setState({popupProps}));
-        const {trackingID, anonymizeUsers} = await services.authService.settings().then(item => item.googleAnalytics || {trackingID: '', anonymizeUsers: true});
+        const authSettings = await services.authService.settings();
+        const {trackingID, anonymizeUsers} = authSettings.googleAnalytics || {trackingID: '', anonymizeUsers: true};
         const {loggedIn, username} = await services.users.get();
         if (trackingID) {
             const ga = await import('react-ga');
             ga.initialize(trackingID);
             const trackPageView = () => {
-                if (loggedIn) {
+                if (loggedIn && username) {
                     const userId = !anonymizeUsers ? username : hashCode(username).toString();
                     ga.set({userId});
                 }
@@ -128,6 +132,13 @@ export class App extends React.Component<{}, {popupProps: PopupProps; error: Err
             };
             trackPageView();
             history.listen(trackPageView);
+        }
+        if (authSettings.uiCssURL) {
+            const link = document.createElement('link');
+            link.href = authSettings.uiCssURL;
+            link.rel = 'stylesheet';
+            link.type = 'text/css';
+            document.head.appendChild(link);
         }
     }
 
@@ -175,7 +186,19 @@ export class App extends React.Component<{}, {popupProps: PopupProps; error: Err
                                                 ) : (
                                                     <Layout
                                                         navItems={navItems}
-                                                        version={() => <DataLoader load={() => services.version.version()}>{msg => msg.Version}</DataLoader>}>
+                                                        version={() => (
+                                                            <DataLoader load={() => versionLoader}>
+                                                                {version => (
+                                                                    <React.Fragment>
+                                                                        <Tooltip content={version.Version}>
+                                                                            <a style={{color: 'white'}} onClick={() => this.setState({showVersionPanel: true})}>
+                                                                                {version.Version}
+                                                                            </a>
+                                                                        </Tooltip>
+                                                                    </React.Fragment>
+                                                                )}
+                                                            </DataLoader>
+                                                        )}>
                                                         <route.component {...routeProps} />
                                                     </Layout>
                                                 )
@@ -201,6 +224,7 @@ export class App extends React.Component<{}, {popupProps: PopupProps; error: Err
                     </Provider>
                 </PageContext.Provider>
                 <Notifications notifications={this.notificationsManager.notifications} />
+                <VersionPanel version={versionLoader} isShown={this.state.showVersionPanel} onClose={() => this.setState({showVersionPanel: false})} />
             </React.Fragment>
         );
     }

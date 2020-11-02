@@ -112,10 +112,12 @@ func TestSameURL(t *testing.T) {
 		"https://github.com/FOO":                           "https://github.com/foo",
 		"https://github.com/TEST":                          "https://github.com/TEST.git",
 		"https://github.com/TEST.git":                      "https://github.com/TEST.git",
-		"ssh://git@GITHUB.com:argoproj/test":               "git@github.com:argoproj/test.git",
-		"ssh://git@GITHUB.com:argoproj/test.git":           "git@github.com:argoproj/test.git",
-		"ssh://git@GITHUB.com:test.git":                    "git@github.com:test.git",
-		"ssh://git@github.com:test":                        "git@github.com:test.git",
+		"https://github.com:4443/TEST":                     "https://github.com:4443/TEST.git",
+		"https://github.com:4443/TEST.git":                 "https://github.com:4443/TEST",
+		"ssh://git@GITHUB.com/argoproj/test":               "git@github.com:argoproj/test.git",
+		"ssh://git@GITHUB.com/argoproj/test.git":           "git@github.com:argoproj/test.git",
+		"ssh://git@GITHUB.com/test.git":                    "git@github.com:test.git",
+		"ssh://git@github.com/test":                        "git@github.com:test.git",
 		" https://github.com/argoproj/test ":               "https://github.com/argoproj/test.git",
 		"\thttps://github.com/argoproj/test\n":             "https://github.com/argoproj/test.git",
 		"https://1234.visualstudio.com/myproj/_git/myrepo": "https://1234.visualstudio.com/myproj/_git/myrepo",
@@ -265,6 +267,45 @@ func TestLFSClient(t *testing.T) {
 		if err == nil {
 			assert.Equal(t, "This is not a YAML, sorry.\n", string(text))
 		}
+	}
+}
+
+func TestVerifyCommitSignature(t *testing.T) {
+	p, err := ioutil.TempDir("", "test-verify-commit-sig")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer os.RemoveAll(p)
+
+	client, err := NewClientExt("https://github.com/argoproj/argo-cd.git", p, NopCreds{}, false, false)
+	assert.NoError(t, err)
+
+	err = client.Init()
+	assert.NoError(t, err)
+
+	err = client.Fetch()
+	assert.NoError(t, err)
+
+	commitSHA, err := client.LsRemote("HEAD")
+	assert.NoError(t, err)
+
+	err = client.Checkout(commitSHA)
+	assert.NoError(t, err)
+
+	// 28027897aad1262662096745f2ce2d4c74d02b7f is a commit that is signed in the repo
+	// It doesn't matter whether we know the key or not at this stage
+	{
+		out, err := client.VerifyCommitSignature("28027897aad1262662096745f2ce2d4c74d02b7f")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, out)
+		assert.Contains(t, out, "gpg: Signature made")
+	}
+
+	// 85d660f0b967960becce3d49bd51c678ba2a5d24 is a commit that is not signed
+	{
+		out, err := client.VerifyCommitSignature("85d660f0b967960becce3d49bd51c678ba2a5d24")
+		assert.NoError(t, err)
+		assert.Empty(t, out)
 	}
 }
 

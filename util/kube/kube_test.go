@@ -7,55 +7,14 @@ import (
 	"testing"
 
 	"github.com/ghodss/yaml"
+
 	"github.com/stretchr/testify/assert"
 	apiv1 "k8s.io/api/core/v1"
 	extv1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/rest"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/argoproj/argo-cd/common"
 )
-
-const depWithLabel = `
-apiVersion: extensions/v1beta2
-kind: Deployment
-metadata:
-  name: nginx-deployment
-  labels:
-    foo: bar
-spec:
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - image: nginx:1.7.9
-        name: nginx
-        ports:
-        - containerPort: 80
-`
-
-func TestUnsetLabels(t *testing.T) {
-	for _, yamlStr := range []string{depWithLabel} {
-		var obj unstructured.Unstructured
-		err := yaml.Unmarshal([]byte(yamlStr), &obj)
-		assert.Nil(t, err)
-
-		UnsetLabel(&obj, "foo")
-
-		manifestBytes, err := json.MarshalIndent(obj.Object, "", "  ")
-		assert.Nil(t, err)
-		log.Println(string(manifestBytes))
-
-		var dep extv1beta1.Deployment
-		err = json.Unmarshal(manifestBytes, &dep)
-		assert.Nil(t, err)
-		assert.Equal(t, 0, len(dep.ObjectMeta.Labels))
-	}
-
-}
 
 const depWithoutSelector = `
 apiVersion: extensions/v1beta1
@@ -195,78 +154,4 @@ func TestSetSvcLabel(t *testing.T) {
 	log.Println(s.Name)
 	log.Println(s.ObjectMeta)
 	assert.Equal(t, "my-app", s.ObjectMeta.Labels[common.LabelKeyAppInstance])
-}
-
-func TestCleanKubectlOutput(t *testing.T) {
-	testString := `error: error validating "STDIN": error validating data: ValidationError(Deployment.spec): missing required field "selector" in io.k8s.api.apps.v1beta2.DeploymentSpec; if you choose to ignore these errors, turn validation off with --validate=false`
-	assert.Equal(t, cleanKubectlOutput(testString), `error validating data: ValidationError(Deployment.spec): missing required field "selector" in io.k8s.api.apps.v1beta2.DeploymentSpec`)
-}
-
-func TestInClusterKubeConfig(t *testing.T) {
-	restConfig := &rest.Config{}
-	kubeConfig := NewKubeConfig(restConfig, "")
-	assert.NotEmpty(t, kubeConfig.AuthInfos[kubeConfig.CurrentContext].TokenFile)
-
-	restConfig = &rest.Config{
-		Password: "foo",
-	}
-	kubeConfig = NewKubeConfig(restConfig, "")
-	assert.Empty(t, kubeConfig.AuthInfos[kubeConfig.CurrentContext].TokenFile)
-
-	restConfig = &rest.Config{
-		ExecProvider: &clientcmdapi.ExecConfig{
-			APIVersion: "client.authentication.k8s.io/v1alpha1",
-			Command:    "aws-iam-authenticator",
-		},
-	}
-	kubeConfig = NewKubeConfig(restConfig, "")
-	assert.Empty(t, kubeConfig.AuthInfos[kubeConfig.CurrentContext].TokenFile)
-}
-
-func TestGetDeploymentReplicas(t *testing.T) {
-	manifest := []byte(`
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:1.7.9
-        ports:
-        - containerPort: 80	
-`)
-	deployment := unstructured.Unstructured{}
-	err := yaml.Unmarshal(manifest, &deployment)
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), *GetDeploymentReplicas(&deployment))
-}
-
-func TestGetNilDeploymentReplicas(t *testing.T) {
-	manifest := []byte(`
-apiVersion: v1
-kind: Pod
-metadata:
-  name: my-pod
-spec:
-  containers:
-  - image: nginx:1.7.9
-    name: nginx
-    resources:
-      requests:
-        cpu: 0.2
-`)
-	noDeployment := unstructured.Unstructured{}
-	err := yaml.Unmarshal(manifest, &noDeployment)
-	assert.NoError(t, err)
-	assert.Nil(t, GetDeploymentReplicas(&noDeployment))
 }

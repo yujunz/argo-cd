@@ -1,6 +1,7 @@
+import {Checkbox, NotificationType} from 'argo-ui';
 import * as React from 'react';
+import {Observable, Observer, Subscription} from 'rxjs';
 
-import {Checkbox, NotificationsApi, NotificationType} from 'argo-ui';
 import {COLORS, ErrorNotification, Revision} from '../../shared/components';
 import {ContextApis} from '../../shared/context';
 import * as appModels from '../../shared/models';
@@ -59,19 +60,6 @@ export async function deleteApplication(appName: string, apis: ContextApis): Pro
     return false;
 }
 
-export async function createApplication(app: appModels.Application, notifications: NotificationsApi): Promise<boolean> {
-    try {
-        await services.applications.create(app);
-        return true;
-    } catch (e) {
-        notifications.show({
-            content: <ErrorNotification title='Unable to create application' e={e} />,
-            type: NotificationType.Error
-        });
-    }
-    return false;
-}
-
 export const OperationPhaseIcon = ({app}: {app: appModels.Application}) => {
     const operationState = getAppOperationState(app);
     if (operationState === undefined) {
@@ -85,11 +73,11 @@ export const OperationPhaseIcon = ({app}: {app: appModels.Application}) => {
             color = COLORS.operation.success;
             break;
         case appModels.OperationPhases.Error:
-            className = 'fa fa-times';
+            className = 'fa fa-times-circle';
             color = COLORS.operation.error;
             break;
         case appModels.OperationPhases.Failed:
-            className = 'fa fa-times';
+            className = 'fa fa-times-circle';
             color = COLORS.operation.failed;
             break;
         default:
@@ -97,22 +85,24 @@ export const OperationPhaseIcon = ({app}: {app: appModels.Application}) => {
             color = COLORS.operation.running;
             break;
     }
-    return <i title={operationState.phase} className={className} style={{color}} />;
+    return <i title={getOperationStateTitle(app)} qe-id='utils-operations-status-title' className={className} style={{color}} />;
 };
 
 export const ComparisonStatusIcon = ({status, resource, label}: {status: appModels.SyncStatusCode; resource?: {requiresPruning?: boolean}; label?: boolean}) => {
     let className = 'fa fa-question-circle';
     let color = COLORS.sync.unknown;
-    let title: string = status;
+    let title: string = 'Unknown';
 
     switch (status) {
         case appModels.SyncStatuses.Synced:
             className = 'fa fa-check-circle';
             color = COLORS.sync.synced;
+            title = 'Synced';
             break;
         case appModels.SyncStatuses.OutOfSync:
             const requiresPruning = resource && resource.requiresPruning;
-            className = requiresPruning ? 'fa fa-times-circle' : 'fa fa-times';
+            className = requiresPruning ? 'fa fa-times-circle' : 'fa fa-arrow-alt-circle-up';
+            title = 'OutOfSync';
             if (requiresPruning) {
                 title = `${title} (requires pruning)`;
             }
@@ -124,18 +114,19 @@ export const ComparisonStatusIcon = ({status, resource, label}: {status: appMode
     }
     return (
         <React.Fragment>
-            <i title={title} className={className} style={{color}} /> {label && title}
+            <i qe-id='utils-sync-status-title' title={title} className={className} style={{color}} /> {label && title}
         </React.Fragment>
     );
 };
 
 export function syncStatusMessage(app: appModels.Application) {
-    let rev = app.spec.source.targetRevision || 'latest';
+    const rev = app.status.sync.revision || app.spec.source.targetRevision || 'HEAD';
+    let message = app.spec.source.targetRevision || 'HEAD';
     if (app.status.sync.revision) {
         if (app.spec.source.chart) {
-            rev += ' (' + app.status.sync.revision + ')';
+            message += ' (' + app.status.sync.revision + ')';
         } else if (app.status.sync.revision.length >= 7 && !app.status.sync.revision.startsWith(app.spec.source.targetRevision)) {
-            rev += ' (' + app.status.sync.revision.substr(0, 7) + ')';
+            message += ' (' + app.status.sync.revision.substr(0, 7) + ')';
         }
     }
     switch (app.status.sync.status) {
@@ -143,8 +134,8 @@ export function syncStatusMessage(app: appModels.Application) {
             return (
                 <span>
                     To{' '}
-                    <Revision repoUrl={app.spec.source.repoURL} revision={app.spec.source.targetRevision || 'latest'}>
-                        {rev}
+                    <Revision repoUrl={app.spec.source.repoURL} revision={rev}>
+                        {message}
                     </Revision>{' '}
                 </span>
             );
@@ -152,13 +143,13 @@ export function syncStatusMessage(app: appModels.Application) {
             return (
                 <span>
                     From{' '}
-                    <Revision repoUrl={app.spec.source.repoURL} revision={app.spec.source.targetRevision || 'latest'}>
-                        {rev}
+                    <Revision repoUrl={app.spec.source.repoURL} revision={rev}>
+                        {message}
                     </Revision>{' '}
                 </span>
             );
         default:
-            return <span>{rev}</span>;
+            return <span>{message}</span>;
     }
 }
 
@@ -169,11 +160,11 @@ export const HealthStatusIcon = ({state}: {state: appModels.HealthStatus}) => {
     switch (state.status) {
         case appModels.HealthStatuses.Healthy:
             color = COLORS.health.healthy;
-            icon = 'fa-heartbeat';
+            icon = 'fa-heart';
             break;
         case appModels.HealthStatuses.Suspended:
             color = COLORS.health.suspended;
-            icon = 'fa-heartbeat';
+            icon = 'fa-heart';
             break;
         case appModels.HealthStatuses.Degraded:
             color = COLORS.health.degraded;
@@ -188,7 +179,7 @@ export const HealthStatusIcon = ({state}: {state: appModels.HealthStatus}) => {
     if (state.message) {
         title = `${state.status}: ${state.message};`;
     }
-    return <i title={title} className={'fa ' + icon} style={{color}} />;
+    return <i qe-id='utils-health-status-title' title={title} className={'fa ' + icon} style={{color}} />;
 };
 
 export const ResourceResultIcon = ({resource}: {resource: appModels.ResourceResult}) => {
@@ -199,23 +190,23 @@ export const ResourceResultIcon = ({resource}: {resource: appModels.ResourceResu
         switch (resource.status) {
             case appModels.ResultCodes.Synced:
                 color = COLORS.sync_result.synced;
-                icon = 'fa-heartbeat';
+                icon = 'fa-heart';
                 break;
             case appModels.ResultCodes.Pruned:
                 color = COLORS.sync_result.pruned;
-                icon = 'fa-heartbeat';
+                icon = 'fa-heart';
                 break;
             case appModels.ResultCodes.SyncFailed:
                 color = COLORS.sync_result.failed;
                 icon = 'fa-heart-broken';
                 break;
             case appModels.ResultCodes.PruneSkipped:
-                icon = 'fa-heartbeat';
+                icon = 'fa-heart';
                 break;
         }
         let title: string = resource.message;
         if (resource.message) {
-            title = `${resource.status}: ${resource.message};`;
+            title = `${resource.status}: ${resource.message}`;
         }
         return <i title={title} className={'fa ' + icon} style={{color}} />;
     }
@@ -236,7 +227,7 @@ export const ResourceResultIcon = ({resource}: {resource: appModels.ResourceResu
                 break;
             case appModels.OperationPhases.Succeeded:
                 color = COLORS.operation.success;
-                className = 'fa fa-heartbeat';
+                className = 'fa fa-heart';
                 break;
             case appModels.OperationPhases.Terminating:
                 color = COLORS.operation.terminating;
@@ -261,6 +252,7 @@ export const getAppOperationState = (app: appModels.Application): appModels.Oper
     } else if (app.operation) {
         return {
             phase: appModels.OperationPhases.Running,
+            message: (app.status && app.status.operationState && app.status.operationState.message) || 'waiting to start',
             startedAt: new Date().toISOString(),
             operation: {
                 sync: {}
@@ -282,16 +274,41 @@ export function getOperationType(application: appModels.Application) {
     return 'Unknown';
 }
 
-export const OperationState = ({app}: {app: appModels.Application}) => {
+const getOperationStateTitle = (app: appModels.Application) => {
+    const appOperationState = getAppOperationState(app);
+    const operationType = getOperationType(app);
+    switch (operationType) {
+        case 'Delete':
+            return 'Deleting';
+        case 'Sync':
+            switch (appOperationState.phase) {
+                case 'Running':
+                    return 'Syncing';
+                case 'Error':
+                    return 'Sync error';
+                case 'Failed':
+                    return 'Sync failed';
+                case 'Succeeded':
+                    return 'Sync OK';
+                case 'Terminating':
+                    return 'Terminated';
+            }
+    }
+    return 'Unknown';
+};
+
+export const OperationState = ({app, quiet}: {app: appModels.Application; quiet?: boolean}) => {
     const appOperationState = getAppOperationState(app);
     if (appOperationState === undefined) {
         return <React.Fragment />;
     }
+    if (quiet && [appModels.OperationPhases.Running, appModels.OperationPhases.Failed, appModels.OperationPhases.Error].indexOf(appOperationState.phase) === -1) {
+        return <React.Fragment />;
+    }
+
     return (
         <React.Fragment>
-            <OperationPhaseIcon app={app} />
-            &nbsp;
-            {getOperationType(app)}
+            <OperationPhaseIcon app={app} /> {getOperationStateTitle(app)}
         </React.Fragment>
     );
 };
@@ -397,6 +414,15 @@ export function isAppRefreshing(app: appModels.Application) {
     return !!(app.metadata.annotations && app.metadata.annotations[appModels.AnnotationRefreshKey]);
 }
 
+export function setAppRefreshing(app: appModels.Application) {
+    if (!app.metadata.annotations) {
+        app.metadata.annotations = {};
+    }
+    if (!app.metadata.annotations[appModels.AnnotationRefreshKey]) {
+        app.metadata.annotations[appModels.AnnotationRefreshKey] = 'refreshing';
+    }
+}
+
 export function refreshLinkAttrs(app: appModels.Application) {
     return {disabled: isAppRefreshing(app)};
 }
@@ -491,3 +517,42 @@ export const ApplicationSyncWindowStatusIcon = ({project, state}: {project: stri
         </a>
     );
 };
+
+/**
+ * Automatically stops and restarts the given observable when page visibility changes.
+ */
+export function handlePageVisibility<T>(src: () => Observable<T>): Observable<T> {
+    return new Observable<T>((observer: Observer<T>) => {
+        let subscription: Subscription;
+        const ensureUnsubscribed = () => {
+            if (subscription) {
+                subscription.unsubscribe();
+                subscription = null;
+            }
+        };
+        const start = () => {
+            ensureUnsubscribed();
+            subscription = src().subscribe((item: T) => observer.next(item), err => observer.error(err), () => observer.complete());
+        };
+
+        if (!document.hidden) {
+            start();
+        }
+
+        const visibilityChangeSubscription = Observable.fromEvent(document, 'visibilitychange')
+            // wait until user stop clicking back and forth to avoid restarting observable too often
+            .debounceTime(500)
+            .subscribe(() => {
+                if (document.hidden && subscription) {
+                    ensureUnsubscribed();
+                } else if (!document.hidden && !subscription) {
+                    start();
+                }
+            });
+
+        return () => {
+            visibilityChangeSubscription.unsubscribe();
+            ensureUnsubscribed();
+        };
+    });
+}

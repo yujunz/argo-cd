@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as superagent from 'superagent';
 const superagentPromise = require('superagent-promise');
 import {BehaviorSubject, Observable, Observer} from 'rxjs';
@@ -22,9 +23,17 @@ enum ReadyState {
 
 const agent: superagent.SuperAgentStatic = superagentPromise(superagent, global.Promise);
 
-let apiRoot = '/api/v1';
+let baseHRef = '/';
 
 const onError = new BehaviorSubject<superagent.ResponseError>(null);
+
+function toAbsURL(val: string): string {
+    return path.join(baseHRef, val);
+}
+
+function apiRoot(): string {
+    return toAbsURL('/api/v1');
+}
 
 function initHandlers(req: superagent.Request) {
     req.on('error', err => onError.next(err));
@@ -32,54 +41,52 @@ function initHandlers(req: superagent.Request) {
 }
 
 export default {
-    setApiRoot(val: string) {
-        apiRoot = val;
+    setBaseHRef(val: string) {
+        baseHRef = val;
     },
     agent,
+    toAbsURL,
     onError: onError.asObservable().filter(err => err != null),
     get(url: string) {
-        return initHandlers(agent.get(`${apiRoot}${url}`));
+        return initHandlers(agent.get(`${apiRoot()}${url}`));
     },
 
     post(url: string) {
-        return initHandlers(agent.post(`${apiRoot}${url}`));
+        return initHandlers(agent.post(`${apiRoot()}${url}`));
     },
 
     put(url: string) {
-        return initHandlers(agent.put(`${apiRoot}${url}`));
+        return initHandlers(agent.put(`${apiRoot()}${url}`));
     },
 
     patch(url: string) {
-        return initHandlers(agent.patch(`${apiRoot}${url}`));
+        return initHandlers(agent.patch(`${apiRoot()}${url}`));
     },
 
     delete(url: string) {
-        return initHandlers(agent.del(`${apiRoot}${url}`));
+        return initHandlers(agent.del(`${apiRoot()}${url}`));
     },
 
-    loadEventSource(url: string, allowAutoRetry = false): Observable<string> {
+    loadEventSource(url: string): Observable<string> {
         return Observable.create((observer: Observer<any>) => {
-            const eventSource = new EventSource(`${apiRoot}${url}`);
-            let opened = false;
-            eventSource.onopen = msg => {
-                if (!opened) {
-                    opened = true;
-                } else if (!allowAutoRetry) {
-                    eventSource.close();
-                    observer.complete();
-                }
-            };
+            let eventSource = new EventSource(`${apiRoot()}${url}`);
             eventSource.onmessage = msg => observer.next(msg.data);
             eventSource.onerror = e => () => {
-                if (e.eventPhase === ReadyState.CLOSED || eventSource.readyState === ReadyState.CONNECTING) {
-                    observer.complete();
-                } else {
-                    observer.error(e);
-                    onError.next(e);
-                }
+                observer.error(e);
+                onError.next(e);
             };
+
+            // EventSource does not provide easy way to get notification when connection closed.
+            // check readyState periodically instead.
+            const interval = setInterval(() => {
+                if (eventSource && eventSource.readyState === ReadyState.CLOSED) {
+                    observer.complete();
+                }
+            }, 500);
             return () => {
+                clearInterval(interval);
                 eventSource.close();
+                eventSource = null;
             };
         });
     }

@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -16,50 +17,54 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver"
-	"github.com/patrickmn/go-cache"
+	"github.com/argoproj/pkg/sync"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 
-	"github.com/argoproj/argo-cd/util"
 	executil "github.com/argoproj/argo-cd/util/exec"
+	"github.com/argoproj/argo-cd/util/io"
 )
 
 var (
-	globalLock = util.NewKeyLock()
+	globalLock = sync.NewKeyLock()
 )
 
 type Creds struct {
-	Username string
-	Password string
-	CAPath   string
-	CertData []byte
-	KeyData  []byte
+	Username           string
+	Password           string
+	CAPath             string
+	CertData           []byte
+	KeyData            []byte
+	InsecureSkipVerify bool
 }
 
 type Client interface {
 	CleanChartCache(chart string, version *semver.Version) error
-	ExtractChart(chart string, version *semver.Version) (string, util.Closer, error)
+	ExtractChart(chart string, version *semver.Version) (string, io.Closer, error)
 	GetIndex() (*Index, error)
+	TestHelmOCI() (bool, error)
 }
 
-func NewClient(repoURL string, creds Creds) Client {
-	return NewClientWithLock(repoURL, creds, globalLock)
+func NewClient(repoURL string, creds Creds, enableOci bool) Client {
+	return NewClientWithLock(repoURL, creds, globalLock, enableOci)
 }
 
-func NewClientWithLock(repoURL string, creds Creds, repoLock *util.KeyLock) Client {
+func NewClientWithLock(repoURL string, creds Creds, repoLock sync.KeyLock, enableOci bool) Client {
 	return &nativeHelmChart{
-		repoURL:  repoURL,
-		creds:    creds,
-		repoPath: filepath.Join(os.TempDir(), strings.Replace(repoURL, "/", "_", -1)),
-		repoLock: repoLock,
+		repoURL:   repoURL,
+		creds:     creds,
+		repoPath:  filepath.Join(os.TempDir(), strings.Replace(repoURL, "/", "_", -1)),
+		repoLock:  repoLock,
+		enableOci: enableOci,
 	}
 }
 
 type nativeHelmChart struct {
-	repoPath string
-	repoURL  string
-	creds    Creds
-	repoLock *util.KeyLock
+	repoPath  string
+	repoURL   string
+	creds     Creds
+	repoLock  sync.KeyLock
+	enableOci bool
 }
 
 func fileExist(filePath string) (bool, error) {
@@ -73,7 +78,7 @@ func fileExist(filePath string) (bool, error) {
 	return true, nil
 }
 
-func (c *nativeHelmChart) helmChartRepoPath() error {
+func (c *nativeHelmChart) ensureHelmChartRepoPath() error {
 	c.repoLock.Lock(c.repoPath)
 	defer c.repoLock.Unlock(c.repoPath)
 
@@ -88,8 +93,8 @@ func (c *nativeHelmChart) CleanChartCache(chart string, version *semver.Version)
 	return os.RemoveAll(c.getChartPath(chart, version))
 }
 
-func (c *nativeHelmChart) ExtractChart(chart string, version *semver.Version) (string, util.Closer, error) {
-	err := c.helmChartRepoPath()
+func (c *nativeHelmChart) ExtractChart(chart string, version *semver.Version) (string, io.Closer, error) {
+	err := c.ensureHelmChartRepoPath()
 	if err != nil {
 		return "", nil, err
 	}
@@ -103,7 +108,9 @@ func (c *nativeHelmChart) ExtractChart(chart string, version *semver.Version) (s
 		return "", nil, err
 	}
 	if !exists {
-		helmCmd, err := NewCmd(c.repoPath)
+		// always use Helm V3 since we don't have chart content to determine correct Helm version
+		helmCmd, err := NewCmdWithVersion(c.repoPath, HelmV3, c.enableOci)
+
 		if err != nil {
 			return "", nil, err
 		}
@@ -114,9 +121,14 @@ func (c *nativeHelmChart) ExtractChart(chart string, version *semver.Version) (s
 			return "", nil, err
 		}
 
-		_, err = helmCmd.RepoUpdate()
-		if err != nil {
-			return "", nil, err
+		if c.enableOci {
+			_, err = helmCmd.Login(c.repoURL, c.creds)
+			if err != nil {
+				return "", nil, err
+			}
+			defer func() {
+				_, _ = helmCmd.Logout(c.repoURL, c.creds)
+			}()
 		}
 
 		// (1) because `helm fetch` downloads an arbitrary file name, we download to an empty temp directory
@@ -129,6 +141,14 @@ func (c *nativeHelmChart) ExtractChart(chart string, version *semver.Version) (s
 		if err != nil {
 			return "", nil, err
 		}
+
+		if c.enableOci {
+			_, err = helmCmd.Export(c.repoURL, chart, version.String(), tempDest)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+
 		// (2) then we assume that the only file downloaded into the directory is the tgz file
 		// and we move that to where we want it
 		infos, err := ioutil.ReadDir(tempDest)
@@ -155,20 +175,59 @@ func (c *nativeHelmChart) ExtractChart(chart string, version *semver.Version) (s
 		_ = os.RemoveAll(tempDir)
 		return "", nil, err
 	}
-	return path.Join(tempDir, chart), util.NewCloser(func() error {
+	return path.Join(tempDir, normalizeChartName(chart)), io.NewCloser(func() error {
 		return os.RemoveAll(tempDir)
 	}), nil
 }
 
 func (c *nativeHelmChart) GetIndex() (*Index, error) {
-	cachedIndex, found := indexCache.Get(c.repoURL)
-	if found {
-		log.WithFields(log.Fields{"url": c.repoURL}).Debug("index cache hit")
-		i := cachedIndex.(Index)
-		return &i, nil
+	start := time.Now()
+
+	data, err := c.loadRepoIndex()
+	if err != nil {
+		return nil, err
 	}
 
+	index := &Index{}
+	err = yaml.NewDecoder(bytes.NewBuffer(data)).Decode(index)
+	if err != nil {
+		return nil, err
+	}
+
+	log.WithFields(log.Fields{"seconds": time.Since(start).Seconds()}).Info("took to get index")
+
+	return index, nil
+}
+
+func (c *nativeHelmChart) TestHelmOCI() (bool, error) {
 	start := time.Now()
+
+	tmpDir, err := ioutil.TempDir("", "helm")
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	helmCmd, err := NewCmdWithVersion(tmpDir, HelmV3, c.enableOci)
+	if err != nil {
+		return false, err
+	}
+	defer helmCmd.Close()
+
+	_, err = helmCmd.Login(c.repoURL, c.creds)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		_, _ = helmCmd.Logout(c.repoURL, c.creds)
+	}()
+
+	log.WithFields(log.Fields{"seconds": time.Since(start).Seconds()}).Info("took to test helm oci repository")
+
+	return true, nil
+}
+
+func (c *nativeHelmChart) loadRepoIndex() ([]byte, error) {
 	repoURL, err := url.Parse(c.repoURL)
 	if err != nil {
 		return nil, err
@@ -188,7 +247,10 @@ func (c *nativeHelmChart) GetIndex() (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr := &http.Transport{TLSClientConfig: tlsConf}
+	tr := &http.Transport{
+		Proxy:           http.ProxyFromEnvironment,
+		TLSClientConfig: tlsConf,
+	}
 	client := http.Client{Transport: tr}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -199,19 +261,11 @@ func (c *nativeHelmChart) GetIndex() (*Index, error) {
 	if resp.StatusCode != 200 {
 		return nil, errors.New("failed to get index: " + resp.Status)
 	}
-
-	index := &Index{}
-	err = yaml.NewDecoder(resp.Body).Decode(index)
-
-	log.WithFields(log.Fields{"seconds": time.Since(start).Seconds()}).Info("took to get index")
-
-	indexCache.Set(c.repoURL, *index, cache.DefaultExpiration)
-
-	return index, err
+	return ioutil.ReadAll(resp.Body)
 }
 
 func newTLSConfig(creds Creds) (*tls.Config, error) {
-	tlsConfig := &tls.Config{InsecureSkipVerify: false}
+	tlsConfig := &tls.Config{InsecureSkipVerify: creds.InsecureSkipVerify}
 
 	if creds.CAPath != "" {
 		caData, err := ioutil.ReadFile(creds.CAPath)
@@ -231,11 +285,34 @@ func newTLSConfig(creds Creds) (*tls.Config, error) {
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
+	// nolint:staticcheck
 	tlsConfig.BuildNameToCertificate()
 
 	return tlsConfig, nil
 }
 
+// Normalize a chart name for file system use, that is, if chart name is foo/bar/baz, returns the last component as chart name.
+func normalizeChartName(chart string) string {
+	_, nc := path.Split(chart)
+	// We do not want to return the empty string or something else related to filesystem access
+	// Instead, return original string
+	if nc == "" || nc == "." || nc == ".." {
+		return chart
+	}
+	return nc
+}
+
 func (c *nativeHelmChart) getChartPath(chart string, version *semver.Version) string {
-	return path.Join(c.repoPath, fmt.Sprintf("%s-%v.tgz", chart, version))
+	if repoNamespace, chartName, isHelmOci := IsHelmOci(chart); isHelmOci {
+		return path.Join(c.repoPath, fmt.Sprintf("%s-%s-%v.tgz", repoNamespace, normalizeChartName(chartName), version))
+	}
+	return path.Join(c.repoPath, fmt.Sprintf("%s-%v.tgz", normalizeChartName(chart), version))
+}
+
+func IsHelmOci(chart string) (string, string, bool) {
+	chartArray := strings.Split(chart, "/")
+	if len(chartArray) == 2 {
+		return chartArray[0], chartArray[1], true
+	}
+	return "", "", false
 }

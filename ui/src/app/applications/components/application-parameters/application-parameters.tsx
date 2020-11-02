@@ -1,4 +1,4 @@
-import {DataLoader, FormField, FormSelect, getNestedField} from 'argo-ui';
+import {AutocompleteField, DataLoader, FormField, FormSelect, getNestedField} from 'argo-ui';
 import * as React from 'react';
 import {FieldApi, FormApi, FormField as ReactFormField, Text, TextArea} from 'react-form';
 
@@ -127,7 +127,7 @@ export const ApplicationParameters = (props: {
                     formApi={formApi}
                     field='spec.source.ksonnet.environment'
                     component={FormSelect}
-                    componentProps={{options: Object.keys(props.details.ksonnet.environments)}}
+                    componentProps={{options: Object.keys(props.details.ksonnet.environments || {})}}
                 />
             )
         });
@@ -158,6 +158,20 @@ export const ApplicationParameters = (props: {
             )
         );
     } else if (props.details.type === 'Kustomize' && props.details.kustomize) {
+        attributes.push({
+            title: 'VERSION',
+            view: (app.spec.source.kustomize && app.spec.source.kustomize.version) || <span>default</span>,
+            edit: (formApi: FormApi) => (
+                <DataLoader load={() => services.authService.settings()}>
+                    {settings =>
+                        ((settings.kustomizeVersions || []).length > 0 && (
+                            <FormField formApi={formApi} field='spec.source.kustomize.version' component={AutocompleteField} componentProps={{items: settings.kustomizeVersions}} />
+                        )) || <span>default</span>
+                    }
+                </DataLoader>
+            )
+        });
+
         attributes.push({
             title: 'NAME PREFIX',
             view: app.spec.source.kustomize && app.spec.source.kustomize.namePrefix,
@@ -263,6 +277,29 @@ export const ApplicationParameters = (props: {
                 })
             )
         );
+        const fileParamsByName = new Map<string, models.HelmFileParameter>();
+        (props.details.helm.fileParameters || []).forEach(param => fileParamsByName.set(param.name, param));
+        const fileOverridesByName = new Map<string, number>();
+        ((source.helm && source.helm.fileParameters) || []).forEach((override, i) => fileOverridesByName.set(override.name, i));
+        attributes = attributes.concat(
+            getParamsEditableItems(
+                app,
+                'PARAMETERS',
+                'spec.source.helm.parameters',
+                removedOverrides,
+                setRemovedOverrides,
+                distinct(fileParamsByName.keys(), fileOverridesByName.keys()).map(name => {
+                    const param = fileParamsByName.get(name);
+                    const original = (param && param.path) || '';
+                    let overrideIndex = fileOverridesByName.get(name);
+                    if (overrideIndex === undefined) {
+                        overrideIndex = -1;
+                    }
+                    const value = (overrideIndex > -1 && source.helm.fileParameters[overrideIndex].path) || original;
+                    return {overrideIndex, original, metadata: {name, value}};
+                })
+            )
+        );
     } else if (props.details.type === 'Plugin') {
         attributes.push({
             title: 'NAME',
@@ -290,18 +327,18 @@ export const ApplicationParameters = (props: {
         attributes.push({
             title: 'TOP-LEVEL ARGUMENTS',
             view: ((directory.jsonnet && directory.jsonnet.tlas) || []).map((i, j) => (
-                <p key={j}>
+                <label key={j}>
                     {i.name}='{i.value}' {i.code && 'code'}
-                </p>
+                </label>
             )),
             edit: (formApi: FormApi) => <FormField field='spec.source.directory.jsonnet.tlas' formApi={formApi} component={VarsInputField} />
         });
         attributes.push({
             title: 'EXTERNAL VARIABLES',
             view: ((directory.jsonnet && directory.jsonnet.extVars) || []).map((i, j) => (
-                <p key={j}>
+                <label key={j}>
                     {i.name}='{i.value}' {i.code && 'code'}
-                </p>
+                </label>
             )),
             edit: (formApi: FormApi) => <FormField field='spec.source.directory.jsonnet.extVars' formApi={formApi} component={VarsInputField} />
         });
@@ -330,6 +367,16 @@ export const ApplicationParameters = (props: {
                 })
             }
             values={app}
+            validate={updatedApp => {
+                const errors = {} as any;
+
+                for (const fieldPath of ['spec.source.directory.jsonnet.tlas', 'spec.source.directory.jsonnet.extVars']) {
+                    const invalid = ((getNestedField(updatedApp, fieldPath) || []) as Array<models.JsonnetVar>).filter(item => !item.name && !item.code);
+                    errors[fieldPath] = invalid.length > 0 ? 'All fields must have name' : null;
+                }
+
+                return errors;
+            }}
             title={props.details.type.toLocaleUpperCase()}
             items={attributes}
             noReadonlyMode={props.noReadonlyMode}

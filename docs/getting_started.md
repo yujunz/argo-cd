@@ -17,23 +17,22 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 
 This will create a new namespace, `argocd`, where Argo CD services and application resources will live.
 
-On GKE, you will need grant your account the ability to create new cluster roles:
+!!! note
+    If you are not interested in UI, SSO, multi-cluster management and just want to pull changes into the cluster then you can disable
+    authentication using `--disable-auth` flag and access Argo CD via CLI using `--port-forward` or `--port-forward-namespace` flags
+    and proceed to step [#6](#6-create-an-application-from-a-git-repository):
     
-```bash
-kubectl create clusterrolebinding YOURNAME-cluster-admin-binding --clusterrole=cluster-admin --user=YOUREMAIL@gmail.com
-```
+    `kubectl patch deploy argocd-server -n argocd -p '[{"op": "add", "path": "/spec/template/spec/containers/0/command/-", "value": "--disable-auth"}]' --type json`
 
 ## 2. Download Argo CD CLI
 
-Download the latest Argo CD version from [https://github.com/argoproj/argo-cd/releases/latest](https://github.com/argoproj/argo-cd/releases/latest).
+Download the latest Argo CD version from [https://github.com/argoproj/argo-cd/releases/latest](https://github.com/argoproj/argo-cd/releases/latest). More detailed installation instructions can be found via the [CLI installation documentation](cli_installation.md).
 
 Also available in Mac Homebrew:
 
 ```bash
-brew tap argoproj/tap
-brew install argoproj/tap/argocd
+brew install argocd
 ```
-
 
 ## 3. Access The Argo CD API Server
 
@@ -81,6 +80,10 @@ Change the password using the command:
 argocd account update-password
 ```
 
+!!! note
+    The initial password is set in a kubernetes secret, named `argocd-secret`, during ArgoCD's initial start up. This means if you edit
+    the deployment in any way which causes a new pod to be deployed, such as disabling TLS on the Argo CD API server. Take note of the initial
+    pod name when you first install Argo CD, or reset the password by following [these instructions](https://argoproj.github.io/argo-cd/faq/#i-forgot-the-admin-password-how-do-i-reset-it)
 
 ## 5. Register A Cluster To Deploy Apps To (Optional)
 
@@ -88,7 +91,7 @@ This step registers a cluster's credentials to Argo CD, and is only necessary wh
 an external cluster. When deploying internally (to the same cluster that Argo CD is running in),
 https://kubernetes.default.svc should be used as the application's K8s API server address.
 
-First list all clusters contexts in your current kubconfig:
+First list all clusters contexts in your current kubeconfig:
 ```bash
 argocd cluster add
 ```
@@ -114,13 +117,10 @@ An example repository containing a guestbook application is available at
 
 ### Creating Apps Via CLI
 
-~~~bash
-argocd app create guestbook \
-  --repo https://github.com/argoproj/argocd-example-apps.git \
-  --path guestbook \
-  --dest-server https://kubernetes.default.svc \
-  --dest-namespace default
-~~~
+!!! note
+    You can access Argo CD using port forwarding: add `--port-forward-namespace argocd` flag to every CLI command or set `ARGOCD_OPTS` environment variable: `export ARGOCD_OPTS='--port-forward-namespace argocd'`:
+
+    `argocd app create guestbook --repo https://github.com/argoproj/argocd-example-apps.git --path guestbook --dest-server https://kubernetes.default.svc --dest-namespace default`
 
 ### Creating Apps Via UI
 

@@ -1,13 +1,11 @@
 package helm
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/url"
 	"os/exec"
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/ghodss/yaml"
@@ -37,11 +35,13 @@ type Helm interface {
 }
 
 // NewHelmApp create a new wrapper to run commands on the `helm` command-line tool.
-func NewHelmApp(workDir string, repos []HelmRepository) (Helm, error) {
-	cmd, err := NewCmd(workDir)
+func NewHelmApp(workDir string, repos []HelmRepository, isLocal bool, version string) (Helm, error) {
+	cmd, err := NewCmd(workDir, version)
 	if err != nil {
 		return nil, err
 	}
+	cmd.IsLocal = isLocal
+
 	return &helm{repos: repos, cmd: *cmd}, nil
 }
 
@@ -52,7 +52,8 @@ type helm struct {
 
 // IsMissingDependencyErr tests if the error is related to a missing chart dependency
 func IsMissingDependencyErr(err error) bool {
-	return strings.Contains(err.Error(), "found in requirements.yaml, but missing in charts")
+	return strings.Contains(err.Error(), "found in requirements.yaml, but missing in charts") ||
+		strings.Contains(err.Error(), "found in Chart.yaml, but missing in charts/ directory")
 }
 
 func (h *helm) Template(templateOpts *TemplateOpts) (string, error) {
@@ -85,20 +86,19 @@ func (h *helm) Dispose() {
 	h.cmd.Close()
 }
 
-func Version() (string, error) {
-	cmd := exec.Command("helm", "version", "--client")
-	out, err := executil.RunWithRedactor(cmd, redactor)
+func Version(shortForm bool) (string, error) {
+	executable := "helm"
+	cmdArgs := []string{"version", "--client"}
+	if shortForm {
+		cmdArgs = append(cmdArgs, "--short")
+	}
+	cmd := exec.Command(executable, cmdArgs...)
+	// example version output:
+	// long: "version.BuildInfo{Version:\"v3.3.1\", GitCommit:\"249e5215cde0c3fa72e27eb7a30e8d55c9696144\", GitTreeState:\"clean\", GoVersion:\"go1.14.7\"}"
+	// short: "v3.3.1+g249e521"
+	version, err := executil.RunWithRedactor(cmd, redactor)
 	if err != nil {
 		return "", fmt.Errorf("could not get helm version: %s", err)
-	}
-	re := regexp.MustCompile(`SemVer:"([a-zA-Z0-9\.]+)"`)
-	matches := re.FindStringSubmatch(out)
-	if len(matches) != 2 {
-		return "", errors.New("could not get helm version")
-	}
-	version := matches[1]
-	if version[0] != 'v' {
-		version = "v" + version
 	}
 	return strings.TrimSpace(version), nil
 }

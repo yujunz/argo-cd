@@ -1,4 +1,4 @@
-@import 'node_modules/argo-ui/src/app/shared/styles/config';
+@import 'node_modules/argo-ui/src/styles/config';
 
 .applications-table {
     &__meta {
@@ -21,6 +21,7 @@
         line-height: 26px;
         padding-top: 4px;
         padding-bottom: 4px;
+        padding-left: 2em;
 
         .columns:last-child {
             .argo-dropdown {

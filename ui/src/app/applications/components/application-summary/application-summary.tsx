@@ -1,18 +1,23 @@
-import {DropDownMenu, FormField, FormSelect, PopupApi} from 'argo-ui';
+import {AutocompleteField, DropDownMenu, FormField, FormSelect, HelpIcon, PopupApi} from 'argo-ui';
 import * as React from 'react';
 import {FormApi, Text} from 'react-form';
-import {AutocompleteField, Cluster, clusterTitle, DataLoader, EditablePanel, EditablePanelItem, MapInputField, Repo, Revision, RevisionHelpIcon} from '../../../shared/components';
-import {Consumer} from '../../../shared/context';
+import {Cluster, DataLoader, EditablePanel, EditablePanelItem, Expandable, MapInputField, Repo, Revision, RevisionHelpIcon} from '../../../shared/components';
+import {Spinner} from '../../../shared/components';
+import {Consumer, Context} from '../../../shared/context';
 import * as models from '../../../shared/models';
 import {services} from '../../../shared/services';
 
+import {ApplicationSyncOptionsField} from '../application-sync-options';
 import {ComparisonStatusIcon, HealthStatusIcon, syncStatusMessage} from '../utils';
 
 require('./application-summary.scss');
 
 const urlPattern = new RegExp(
-    '^(https?:\\/\\/)?((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|((\\d{1,3}\\.){3}\\d{1,3}))' + '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*(\\?[;&a-z\\d%_.~+=-]*)?(\\#[-a-z\\d_]*)?$',
-    'i'
+    new RegExp(
+        // tslint:disable-next-line:max-line-length
+        /^(https?:\/\/(?:www\.|(?!www))[a-z0-9][a-z0-9-]+[a-z0-9]\.[^\s]{2,}|www\.[a-z0-9][a-z0-9-]+[a-z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-z0-9]+\.[^\s]{2,}|www\.[a-z0-9]+\.[^\s]{2,})$/,
+        'gi'
+    )
 );
 
 function swap(array: any[], a: number, b: number) {
@@ -24,13 +29,15 @@ function swap(array: any[], a: number, b: number) {
 export const ApplicationSummary = (props: {app: models.Application; updateApp: (app: models.Application) => Promise<any>}) => {
     const app = JSON.parse(JSON.stringify(props.app)) as models.Application;
     const isHelm = app.spec.source.hasOwnProperty('chart');
-
+    const initialState = app.spec.destination.server === undefined ? 'NAME' : 'URL';
+    const [destFormat, setDestFormat] = React.useState(initialState);
+    const [changeSync, setChangeSync] = React.useState(false);
     const attributes = [
         {
             title: 'PROJECT',
             view: <a href={'/settings/projects/' + app.spec.project}>{app.spec.project}</a>,
             edit: (formApi: FormApi) => (
-                <DataLoader load={() => services.projects.list().then(projs => projs.map(item => item.metadata.name))}>
+                <DataLoader load={() => services.projects.list('items.metadata.name').then(projs => projs.map(item => item.metadata.name))}>
                     {projects => <FormField formApi={formApi} field='spec.project' component={FormSelect} componentProps={{options: projects}} />}
                 </DataLoader>
             )
@@ -43,19 +50,74 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
             edit: (formApi: FormApi) => <FormField formApi={formApi} field='metadata.labels' component={MapInputField} />
         },
         {
+            title: 'ANNOTATIONS',
+            view: (
+                <Expandable height={48}>
+                    {Object.keys(app.metadata.annotations || {})
+                        .map(annotation => `${annotation}=${app.metadata.annotations[annotation]}`)
+                        .join(' ')}
+                </Expandable>
+            ),
+            edit: (formApi: FormApi) => <FormField formApi={formApi} field='metadata.annotations' component={MapInputField} />
+        },
+        {
             title: 'CLUSTER',
-            view: <Cluster server={app.spec.destination.server} showUrl={true} />,
+            view: <Cluster server={app.spec.destination.server} name={app.spec.destination.name} showUrl={true} />,
             edit: (formApi: FormApi) => (
-                <DataLoader
-                    load={() =>
-                        services.clusters.list().then(clusters =>
-                            clusters.map(cluster => ({
-                                title: clusterTitle(cluster),
-                                value: cluster.server
-                            }))
-                        )
-                    }>
-                    {clusters => <FormField formApi={formApi} field='spec.destination.server' componentProps={{options: clusters}} component={FormSelect} />}
+                <DataLoader load={() => services.clusters.list().then(clusters => clusters.sort())}>
+                    {clusters => {
+                        return (
+                            <div className='row'>
+                                {(destFormat.toUpperCase() === 'URL' && (
+                                    <div className='columns small-10'>
+                                        <FormField
+                                            formApi={formApi}
+                                            field='spec.destination.server'
+                                            componentProps={{items: clusters.map(cluster => cluster.server)}}
+                                            component={AutocompleteField}
+                                        />
+                                    </div>
+                                )) || (
+                                    <div className='columns small-10'>
+                                        <FormField
+                                            formApi={formApi}
+                                            field='spec.destination.name'
+                                            componentProps={{items: clusters.map(cluster => cluster.name)}}
+                                            component={AutocompleteField}
+                                        />
+                                    </div>
+                                )}
+                                <div className='columns small-2'>
+                                    <div>
+                                        <DropDownMenu
+                                            anchor={() => (
+                                                <p>
+                                                    {destFormat.toUpperCase()} <i className='fa fa-caret-down' />
+                                                </p>
+                                            )}
+                                            items={['URL', 'NAME'].map((type: 'URL' | 'NAME') => ({
+                                                title: type,
+                                                action: () => {
+                                                    if (destFormat !== type) {
+                                                        const updatedApp = formApi.getFormState().values as models.Application;
+                                                        if (type === 'URL') {
+                                                            updatedApp.spec.destination.server = '';
+                                                            delete updatedApp.spec.destination.name;
+                                                        } else {
+                                                            updatedApp.spec.destination.name = '';
+                                                            delete updatedApp.spec.destination.server;
+                                                        }
+                                                        formApi.setAllValues(updatedApp);
+                                                        setDestFormat(type);
+                                                    }
+                                                }
+                                            }))}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }}
                 </DataLoader>
             )
         },
@@ -111,7 +173,7 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                                                           items: versions
                                                       }}
                                                   />
-                                                  <RevisionHelpIcon type='helm' />
+                                                  <RevisionHelpIcon type='helm' top='0' />
                                               </div>
                                           )}
                                       </DataLoader>
@@ -128,7 +190,7 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                       edit: (formApi: FormApi) => (
                           <React.Fragment>
                               <FormField formApi={formApi} field='spec.source.targetRevision' component={Text} componentProps={{placeholder: 'HEAD'}} />
-                              <RevisionHelpIcon type='git' />{' '}
+                              <RevisionHelpIcon type='git' top='0' />{' '}
                           </React.Fragment>
                       )
                   },
@@ -138,6 +200,34 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                       edit: (formApi: FormApi) => <FormField formApi={formApi} field='spec.source.path' component={Text} />
                   }
               ]),
+
+        {
+            title: 'REVISION HISTORY LIMIT',
+            view: app.spec.revisionHistoryLimit,
+            edit: (formApi: FormApi) => (
+                <div style={{position: 'relative'}}>
+                    <FormField formApi={formApi} field='spec.revisionHistoryLimit' component={Text} />
+                    <div style={{position: 'absolute', right: '0', top: '0'}}>
+                        <HelpIcon
+                            title='This limits this number of items kept in the apps revision history.
+    This should only be changed in exceptional circumstances.
+    Setting to zero will store no history. This will reduce storage used.
+    Increasing will increase the space used to store the history, so we do not recommend increasing it.
+    Default is 10.'
+                        />
+                    </div>
+                </div>
+            )
+        },
+        {
+            title: 'SYNC OPTIONS',
+            view: ((app.spec.syncPolicy || {}).syncOptions || []).join(', '),
+            edit: (formApi: FormApi) => (
+                <div>
+                    <FormField formApi={formApi} field='spec.syncPolicy.syncOptions' component={ApplicationSyncOptionsField} />
+                </div>
+            )
+        },
         {
             title: 'STATUS',
             view: (
@@ -190,18 +280,31 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
     async function setAutoSync(ctx: {popup: PopupApi}, confirmationTitle: string, confirmationText: string, prune: boolean, selfHeal: boolean) {
         const confirmed = await ctx.popup.confirm(confirmationTitle, confirmationText);
         if (confirmed) {
-            const updatedApp = JSON.parse(JSON.stringify(props.app)) as models.Application;
-            updatedApp.spec.syncPolicy = {automated: {prune, selfHeal}};
-            props.updateApp(updatedApp);
+            try {
+                setChangeSync(true);
+                const updatedApp = JSON.parse(JSON.stringify(props.app)) as models.Application;
+                if (!updatedApp.spec.syncPolicy) {
+                    updatedApp.spec.syncPolicy = {};
+                }
+                updatedApp.spec.syncPolicy.automated = {prune, selfHeal};
+                await props.updateApp(updatedApp);
+            } finally {
+                setChangeSync(false);
+            }
         }
     }
 
     async function unsetAutoSync(ctx: {popup: PopupApi}) {
         const confirmed = await ctx.popup.confirm('Disable Auto-Sync?', 'Are you sure you want to disable automated application synchronization');
         if (confirmed) {
-            const updatedApp = JSON.parse(JSON.stringify(props.app)) as models.Application;
-            updatedApp.spec.syncPolicy = {automated: null};
-            props.updateApp(updatedApp);
+            try {
+                setChangeSync(true);
+                const updatedApp = JSON.parse(JSON.stringify(props.app)) as models.Application;
+                updatedApp.spec.syncPolicy.automated = null;
+                await props.updateApp(updatedApp);
+            } finally {
+                setChangeSync(false);
+            }
         }
     }
 
@@ -278,8 +381,9 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
             edit: null
         });
     const [badgeType, setBadgeType] = React.useState('URL');
-    const badgeURL = `${location.protocol}//${location.host}/api/badge?name=${props.app.metadata.name}`;
-    const appURL = `${location.protocol}//${location.host}/applications/${props.app.metadata.name}`;
+    const context = React.useContext(Context);
+    const badgeURL = `${location.protocol}//${location.host}${context.baseHref}api/badge?name=${props.app.metadata.name}&revision=true`;
+    const appURL = `${location.protocol}//${location.host}${context.baseHref}applications/${props.app.metadata.name}`;
 
     return (
         <div className='application-summary'>
@@ -287,8 +391,8 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                 save={props.updateApp}
                 validate={input => ({
                     'spec.project': !input.spec.project && 'Project name is required',
-                    'spec.destination.server': !input.spec.destination.server && 'Cluster is required',
-                    'spec.destination.namespace': !input.spec.destination.namespace && 'Namespace is required'
+                    'spec.destination.server': !input.spec.destination.server && input.spec.destination.hasOwnProperty('server') && 'Cluster server is required',
+                    'spec.destination.name': !input.spec.destination.name && input.spec.destination.hasOwnProperty('name') && 'Cluster name is required'
                 })}
                 values={app}
                 title={app.metadata.name.toLocaleUpperCase()}
@@ -304,6 +408,7 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                                 <div className='columns small-9'>
                                     {(app.spec.syncPolicy && app.spec.syncPolicy.automated && (
                                         <button className='argo-button argo-button--base' onClick={() => unsetAutoSync(ctx)}>
+                                            <Spinner show={changeSync} style={{marginRight: '5px'}} />
                                             Disable Auto-Sync
                                         </button>
                                     )) || (
@@ -312,6 +417,7 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                                             onClick={() =>
                                                 setAutoSync(ctx, 'Enable Auto-Sync?', 'Are you sure you want to enable automated application synchronization?', false, false)
                                             }>
+                                            <Spinner show={changeSync} style={{marginRight: '5px'}} />
                                             Enable Auto-Sync
                                         </button>
                                     )}
@@ -400,7 +506,7 @@ export const ApplicationSummary = (props: {app: models.Application; updateApp: (
                         <div className='white-box'>
                             <div className='white-box__details'>
                                 <p>
-                                    Status Badge <img src={`/api/badge?name=${props.app.metadata.name}`} />{' '}
+                                    Status Badge <img src={badgeURL} />{' '}
                                 </p>
                                 <div className='white-box__details-row'>
                                     <DropDownMenu

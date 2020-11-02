@@ -8,9 +8,10 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"regexp"
+	"reflect"
 	"syscall"
 
+	"github.com/argoproj/gitops-engine/pkg/utils/kube"
 	"github.com/ghodss/yaml"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -24,20 +25,20 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/argoproj/argo-cd/cmd/argocd-util/commands"
 	"github.com/argoproj/argo-cd/common"
-	"github.com/argoproj/argo-cd/util"
-
-	"github.com/argoproj/argo-cd/errors"
 	"github.com/argoproj/argo-cd/util/cli"
 	"github.com/argoproj/argo-cd/util/db"
 	"github.com/argoproj/argo-cd/util/dex"
-	"github.com/argoproj/argo-cd/util/kube"
+	"github.com/argoproj/argo-cd/util/errors"
 	"github.com/argoproj/argo-cd/util/settings"
 
 	// load the gcp plugin (required to authenticate against GKE clusters).
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	// load the oidc plugin (required to authenticate with OpenID Connect).
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
+	// load the azure plugin (required to authenticate with AKS clusters).
+	_ "k8s.io/client-go/plugin/pkg/client/auth/azure"
 )
 
 const (
@@ -57,7 +58,8 @@ var (
 // NewCommand returns a new instance of an argocd command
 func NewCommand() *cobra.Command {
 	var (
-		logLevel string
+		logFormat string
+		logLevel  string
 	)
 
 	var command = &cobra.Command{
@@ -74,8 +76,11 @@ func NewCommand() *cobra.Command {
 	command.AddCommand(NewImportCommand())
 	command.AddCommand(NewExportCommand())
 	command.AddCommand(NewClusterConfig())
-	command.AddCommand(NewProjectsCommand())
+	command.AddCommand(commands.NewProjectsCommand())
+	command.AddCommand(commands.NewSettingsCommand())
+	command.AddCommand(commands.NewAppsCommand())
 
+	command.Flags().StringVar(&logFormat, "logformat", "text", "Set the logging format. One of: text|json")
 	command.Flags().StringVar(&logLevel, "loglevel", "info", "Set the logging level. One of: debug|info|warn|error")
 	return command
 }
@@ -110,7 +115,7 @@ func NewRunDexCommand() *cobra.Command {
 				} else {
 					err = ioutil.WriteFile("/tmp/dex.yaml", dexCfgBytes, 0644)
 					errors.CheckError(err)
-					log.Info(redactor(string(dexCfgBytes)))
+					log.Debug(redactor(string(dexCfgBytes)))
 					cmd = exec.Command("dex", "serve", "/tmp/dex.yaml")
 					cmd.Stdout = os.Stdout
 					cmd.Stderr = os.Stderr
@@ -244,43 +249,49 @@ func NewImportCommand() *cobra.Command {
 			// pruneObjects tracks live objects and it's current resource version. any remaining
 			// items in this map indicates the resource should be pruned since it no longer appears
 			// in the backup
-			pruneObjects := make(map[kube.ResourceKey]string)
-			configMaps, err := acdClients.configMaps.List(metav1.ListOptions{})
+			pruneObjects := make(map[kube.ResourceKey]unstructured.Unstructured)
+			configMaps, err := acdClients.configMaps.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
+			// referencedSecrets holds any secrets referenced in the argocd-cm configmap. These
+			// secrets need to be imported too
+			var referencedSecrets map[string]bool
 			for _, cm := range configMaps.Items {
-				cmName := cm.GetName()
-				if cmName == common.ArgoCDConfigMapName || cmName == common.ArgoCDRBACConfigMapName {
-					pruneObjects[kube.ResourceKey{Group: "", Kind: "ConfigMap", Name: cm.GetName()}] = cm.GetResourceVersion()
+				if isArgoCDConfigMap(cm.GetName()) {
+					pruneObjects[kube.ResourceKey{Group: "", Kind: "ConfigMap", Name: cm.GetName()}] = cm
+				}
+				if cm.GetName() == common.ArgoCDConfigMapName {
+					referencedSecrets = getReferencedSecrets(cm)
 				}
 			}
-			secrets, err := acdClients.secrets.List(metav1.ListOptions{})
+
+			secrets, err := acdClients.secrets.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
 			for _, secret := range secrets.Items {
-				if isArgoCDSecret(nil, secret) {
-					pruneObjects[kube.ResourceKey{Group: "", Kind: "Secret", Name: secret.GetName()}] = secret.GetResourceVersion()
+				if isArgoCDSecret(referencedSecrets, secret) {
+					pruneObjects[kube.ResourceKey{Group: "", Kind: "Secret", Name: secret.GetName()}] = secret
 				}
 			}
-			applications, err := acdClients.applications.List(metav1.ListOptions{})
+			applications, err := acdClients.applications.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
 			for _, app := range applications.Items {
-				pruneObjects[kube.ResourceKey{Group: "argoproj.io", Kind: "Application", Name: app.GetName()}] = app.GetResourceVersion()
+				pruneObjects[kube.ResourceKey{Group: "argoproj.io", Kind: "Application", Name: app.GetName()}] = app
 			}
-			projects, err := acdClients.projects.List(metav1.ListOptions{})
+			projects, err := acdClients.projects.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
 			for _, proj := range projects.Items {
-				pruneObjects[kube.ResourceKey{Group: "argoproj.io", Kind: "AppProject", Name: proj.GetName()}] = proj.GetResourceVersion()
+				pruneObjects[kube.ResourceKey{Group: "argoproj.io", Kind: "AppProject", Name: proj.GetName()}] = proj
 			}
 
 			// Create or replace existing object
-			objs, err := kube.SplitYAML(string(input))
+			backupObjects, err := kube.SplitYAML(input)
 			errors.CheckError(err)
-			for _, obj := range objs {
-				gvk := obj.GroupVersionKind()
-				key := kube.ResourceKey{Group: gvk.Group, Kind: gvk.Kind, Name: obj.GetName()}
-				resourceVersion, exists := pruneObjects[key]
+			for _, bakObj := range backupObjects {
+				gvk := bakObj.GroupVersionKind()
+				key := kube.ResourceKey{Group: gvk.Group, Kind: gvk.Kind, Name: bakObj.GetName()}
+				liveObj, exists := pruneObjects[key]
 				delete(pruneObjects, key)
 				var dynClient dynamic.ResourceInterface
-				switch obj.GetKind() {
+				switch bakObj.GetKind() {
 				case "Secret":
 					dynClient = acdClients.secrets
 				case "ConfigMap":
@@ -292,17 +303,19 @@ func NewImportCommand() *cobra.Command {
 				}
 				if !exists {
 					if !dryRun {
-						_, err = dynClient.Create(obj, metav1.CreateOptions{})
+						_, err = dynClient.Create(context.Background(), bakObj, metav1.CreateOptions{})
 						errors.CheckError(err)
 					}
-					fmt.Printf("%s/%s %s created%s\n", gvk.Group, gvk.Kind, obj.GetName(), dryRunMsg)
+					fmt.Printf("%s/%s %s created%s\n", gvk.Group, gvk.Kind, bakObj.GetName(), dryRunMsg)
+				} else if specsEqual(*bakObj, liveObj) {
+					fmt.Printf("%s/%s %s unchanged%s\n", gvk.Group, gvk.Kind, bakObj.GetName(), dryRunMsg)
 				} else {
 					if !dryRun {
-						obj.SetResourceVersion(resourceVersion)
-						_, err = dynClient.Update(obj, metav1.UpdateOptions{})
+						newLive := updateLive(bakObj, &liveObj)
+						_, err = dynClient.Update(context.Background(), newLive, metav1.UpdateOptions{})
 						errors.CheckError(err)
 					}
-					fmt.Printf("%s/%s %s replaced%s\n", gvk.Group, gvk.Kind, obj.GetName(), dryRunMsg)
+					fmt.Printf("%s/%s %s updated%s\n", gvk.Group, gvk.Kind, bakObj.GetName(), dryRunMsg)
 				}
 			}
 
@@ -321,7 +334,7 @@ func NewImportCommand() *cobra.Command {
 						log.Fatalf("Unexpected kind '%s' in prune list", key.Kind)
 					}
 					if !dryRun {
-						err = dynClient.Delete(key.Name, &metav1.DeleteOptions{})
+						err = dynClient.Delete(context.Background(), key.Name, metav1.DeleteOptions{})
 						errors.CheckError(err)
 					}
 					fmt.Printf("%s/%s %s pruned%s\n", key.Group, key.Kind, key.Name, dryRunMsg)
@@ -378,38 +391,44 @@ func NewExportCommand() *cobra.Command {
 			} else {
 				f, err := os.Create(out)
 				errors.CheckError(err)
-				defer util.Close(f)
-				writer = bufio.NewWriter(f)
+				bw := bufio.NewWriter(f)
+				writer = bw
+				defer func() {
+					err = bw.Flush()
+					errors.CheckError(err)
+					err = f.Close()
+					errors.CheckError(err)
+				}()
 			}
 
 			acdClients := newArgoCDClientsets(config, namespace)
-			acdConfigMap, err := acdClients.configMaps.Get(common.ArgoCDConfigMapName, metav1.GetOptions{})
+			acdConfigMap, err := acdClients.configMaps.Get(context.Background(), common.ArgoCDConfigMapName, metav1.GetOptions{})
 			errors.CheckError(err)
 			export(writer, *acdConfigMap)
-			acdRBACConfigMap, err := acdClients.configMaps.Get(common.ArgoCDRBACConfigMapName, metav1.GetOptions{})
+			acdRBACConfigMap, err := acdClients.configMaps.Get(context.Background(), common.ArgoCDRBACConfigMapName, metav1.GetOptions{})
 			errors.CheckError(err)
 			export(writer, *acdRBACConfigMap)
-			acdKnownHostsConfigMap, err := acdClients.configMaps.Get(common.ArgoCDKnownHostsConfigMapName, metav1.GetOptions{})
+			acdKnownHostsConfigMap, err := acdClients.configMaps.Get(context.Background(), common.ArgoCDKnownHostsConfigMapName, metav1.GetOptions{})
 			errors.CheckError(err)
 			export(writer, *acdKnownHostsConfigMap)
-			acdTLSCertsConfigMap, err := acdClients.configMaps.Get(common.ArgoCDTLSCertsConfigMapName, metav1.GetOptions{})
+			acdTLSCertsConfigMap, err := acdClients.configMaps.Get(context.Background(), common.ArgoCDTLSCertsConfigMapName, metav1.GetOptions{})
 			errors.CheckError(err)
 			export(writer, *acdTLSCertsConfigMap)
 
 			referencedSecrets := getReferencedSecrets(*acdConfigMap)
-			secrets, err := acdClients.secrets.List(metav1.ListOptions{})
+			secrets, err := acdClients.secrets.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
 			for _, secret := range secrets.Items {
 				if isArgoCDSecret(referencedSecrets, secret) {
 					export(writer, secret)
 				}
 			}
-			projects, err := acdClients.projects.List(metav1.ListOptions{})
+			projects, err := acdClients.projects.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
 			for _, proj := range projects.Items {
 				export(writer, proj)
 			}
-			applications, err := acdClients.applications.List(metav1.ListOptions{})
+			applications, err := acdClients.applications.List(context.Background(), metav1.ListOptions{})
 			errors.CheckError(err)
 			for _, app := range applications.Items {
 				export(writer, app)
@@ -506,6 +525,73 @@ func isArgoCDSecret(repoSecretRefs map[string]bool, un unstructured.Unstructured
 	return false
 }
 
+// isArgoCDConfigMap returns true if the configmap name is one of argo cd's well known configmaps
+func isArgoCDConfigMap(name string) bool {
+	switch name {
+	case common.ArgoCDConfigMapName, common.ArgoCDRBACConfigMapName, common.ArgoCDKnownHostsConfigMapName, common.ArgoCDTLSCertsConfigMapName:
+		return true
+	}
+	return false
+
+}
+
+// specsEqual returns if the spec, data, labels, annotations, and finalizers of the two
+// supplied objects are equal, indicating that no update is necessary during importing
+func specsEqual(left, right unstructured.Unstructured) bool {
+	if !reflect.DeepEqual(left.GetAnnotations(), right.GetAnnotations()) {
+		return false
+	}
+	if !reflect.DeepEqual(left.GetLabels(), right.GetLabels()) {
+		return false
+	}
+	if !reflect.DeepEqual(left.GetFinalizers(), right.GetFinalizers()) {
+		return false
+	}
+	switch left.GetKind() {
+	case "Secret", "ConfigMap":
+		leftData, _, _ := unstructured.NestedMap(left.Object, "data")
+		rightData, _, _ := unstructured.NestedMap(right.Object, "data")
+		return reflect.DeepEqual(leftData, rightData)
+	case "AppProject":
+		leftSpec, _, _ := unstructured.NestedMap(left.Object, "spec")
+		rightSpec, _, _ := unstructured.NestedMap(right.Object, "spec")
+		return reflect.DeepEqual(leftSpec, rightSpec)
+	case "Application":
+		leftSpec, _, _ := unstructured.NestedMap(left.Object, "spec")
+		rightSpec, _, _ := unstructured.NestedMap(right.Object, "spec")
+		leftStatus, _, _ := unstructured.NestedMap(left.Object, "status")
+		rightStatus, _, _ := unstructured.NestedMap(right.Object, "status")
+		// reconciledAt and observedAt are constantly changing and we ignore any diff there
+		delete(leftStatus, "reconciledAt")
+		delete(rightStatus, "reconciledAt")
+		delete(leftStatus, "observedAt")
+		delete(rightStatus, "observedAt")
+		return reflect.DeepEqual(leftSpec, rightSpec) && reflect.DeepEqual(leftStatus, rightStatus)
+	}
+	return false
+}
+
+// updateLive replaces the live object's finalizers, spec, annotations, labels, and data from the
+// backup object but leaves all other fields intact (status, other metadata, etc...)
+func updateLive(bak, live *unstructured.Unstructured) *unstructured.Unstructured {
+	newLive := live.DeepCopy()
+	newLive.SetAnnotations(bak.GetAnnotations())
+	newLive.SetLabels(bak.GetLabels())
+	newLive.SetFinalizers(bak.GetFinalizers())
+	switch live.GetKind() {
+	case "Secret", "ConfigMap":
+		newLive.Object["data"] = bak.Object["data"]
+	case "AppProject":
+		newLive.Object["spec"] = bak.Object["spec"]
+	case "Application":
+		newLive.Object["spec"] = bak.Object["spec"]
+		if _, ok := bak.Object["status"]; ok {
+			newLive.Object["status"] = bak.Object["status"]
+		}
+	}
+	return newLive
+}
+
 // export writes the unstructured object and removes extraneous cruft from output before writing
 func export(w io.Writer, un unstructured.Unstructured) {
 	name := un.GetName()
@@ -553,7 +639,7 @@ func NewClusterConfig() *cobra.Command {
 
 			cluster, err := db.NewDB(namespace, settings.NewSettingsManager(context.Background(), kubeclientset, namespace), kubeclientset).GetCluster(context.Background(), serverUrl)
 			errors.CheckError(err)
-			err = kube.WriteKubeConfig(cluster.RESTConfig(), namespace, output)
+			err = kube.WriteKubeConfig(cluster.RawRestConfig(), namespace, output)
 			errors.CheckError(err)
 		},
 	}
@@ -561,9 +647,36 @@ func NewClusterConfig() *cobra.Command {
 	return command
 }
 
+func iterateStringFields(obj interface{}, callback func(name string, val string) string) {
+	if mapField, ok := obj.(map[string]interface{}); ok {
+		for field, val := range mapField {
+			if strVal, ok := val.(string); ok {
+				mapField[field] = callback(field, strVal)
+			} else {
+				iterateStringFields(val, callback)
+			}
+		}
+	} else if arrayField, ok := obj.([]interface{}); ok {
+		for i := range arrayField {
+			iterateStringFields(arrayField[i], callback)
+		}
+	}
+}
+
 func redactor(dirtyString string) string {
-	dirtyString = regexp.MustCompile("(clientSecret: )[^ \n]*").ReplaceAllString(dirtyString, "$1********")
-	return regexp.MustCompile("(secret: )[^ \n]*").ReplaceAllString(dirtyString, "$1********")
+	config := make(map[string]interface{})
+	err := yaml.Unmarshal([]byte(dirtyString), &config)
+	errors.CheckError(err)
+	iterateStringFields(config, func(name string, val string) string {
+		if name == "clientSecret" || name == "secret" || name == "bindPW" {
+			return "********"
+		} else {
+			return val
+		}
+	})
+	data, err := yaml.Marshal(config)
+	errors.CheckError(err)
+	return string(data)
 }
 
 func main() {

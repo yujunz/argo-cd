@@ -1,4 +1,0 @@
-dependencies:
-  - name: helm
-    repository: "@custom-repo"
-    version: v1.0.0

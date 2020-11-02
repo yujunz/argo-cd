@@ -10,16 +10,16 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/argoproj/argo-cd/errors"
 	argocdclient "github.com/argoproj/argo-cd/pkg/apiclient"
 	repocredspkg "github.com/argoproj/argo-cd/pkg/apiclient/repocreds"
 	appsv1 "github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
-	"github.com/argoproj/argo-cd/util"
 	"github.com/argoproj/argo-cd/util/cli"
+	"github.com/argoproj/argo-cd/util/errors"
 	"github.com/argoproj/argo-cd/util/git"
+	"github.com/argoproj/argo-cd/util/io"
 )
 
-// NewRepoCredsCommand returns a new instance of an `argocd repo` command
+// NewRepoCredsCommand returns a new instance of an `argocd repocreds` command
 func NewRepoCredsCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 	var command = &cobra.Command{
 		Use:   "repocreds",
@@ -36,7 +36,7 @@ func NewRepoCredsCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command 
 	return command
 }
 
-// NewRepoCredsAddCommand returns a new instance of an `argocd repo add` command
+// NewRepoCredsAddCommand returns a new instance of an `argocd repocreds add` command
 func NewRepoCredsAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 	var (
 		repo                 appsv1.RepoCreds
@@ -50,8 +50,8 @@ func NewRepoCredsAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Comma
 	var repocredsAddExamples = `  # Add credentials with user/pass authentication to use for all repositories under https://git.example.com/repos
   argocd repocreds add https://git.example.com/repos/ --username git --password secret
 
-  # Add credentials with SSH private key authentication to use for all repositories under https://git.example.com/repos
-  argocd repocreds add https://git.example.com/repos/ --ssh-private-key-path ~/.ssh/id_rsa
+  # Add credentials with SSH private key authentication to use for all repositories under ssh://git@git.example.com/repos
+  argocd repocreds add ssh://git@git.example.com/repos/ --ssh-private-key-path ~/.ssh/id_rsa
 `
 
 	var command = &cobra.Command{
@@ -104,7 +104,7 @@ func NewRepoCredsAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Comma
 			}
 
 			conn, repoIf := argocdclient.NewClientOrDie(clientOpts).NewRepoCredsClientOrDie()
-			defer util.Close(conn)
+			defer io.Close(conn)
 
 			// If the user set a username, but didn't supply password via --password,
 			// then we prompt for it
@@ -131,7 +131,7 @@ func NewRepoCredsAddCommand(clientOpts *argocdclient.ClientOptions) *cobra.Comma
 	return command
 }
 
-// NewRepoCredsRemoveCommand returns a new instance of an `argocd repo list` command
+// NewRepoCredsRemoveCommand returns a new instance of an `argocd repocreds rm` command
 func NewRepoCredsRemoveCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 	var command = &cobra.Command{
 		Use:   "rm CREDSURL",
@@ -142,7 +142,7 @@ func NewRepoCredsRemoveCommand(clientOpts *argocdclient.ClientOptions) *cobra.Co
 				os.Exit(1)
 			}
 			conn, repoIf := argocdclient.NewClientOrDie(clientOpts).NewRepoCredsClientOrDie()
-			defer util.Close(conn)
+			defer io.Close(conn)
 			for _, repoURL := range args {
 				_, err := repoIf.DeleteRepositoryCredentials(context.Background(), &repocredspkg.RepoCredsDeleteRequest{Url: repoURL})
 				errors.CheckError(err)
@@ -172,7 +172,7 @@ func printRepoCredsUrls(repos []appsv1.RepoCreds) {
 	}
 }
 
-// NewRepoCredsListCommand returns a new instance of an `argocd repo rm` command
+// NewRepoCredsListCommand returns a new instance of an `argocd repo list` command
 func NewRepoCredsListCommand(clientOpts *argocdclient.ClientOptions) *cobra.Command {
 	var (
 		output string
@@ -182,7 +182,7 @@ func NewRepoCredsListCommand(clientOpts *argocdclient.ClientOptions) *cobra.Comm
 		Short: "List configured repository credentials",
 		Run: func(c *cobra.Command, args []string) {
 			conn, repoIf := argocdclient.NewClientOrDie(clientOpts).NewRepoCredsClientOrDie()
-			defer util.Close(conn)
+			defer io.Close(conn)
 			repos, err := repoIf.ListRepositoryCredentials(context.Background(), &repocredspkg.RepoCredsQuery{})
 			errors.CheckError(err)
 			switch output {

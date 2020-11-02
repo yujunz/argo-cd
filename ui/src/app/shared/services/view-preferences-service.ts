@@ -5,8 +5,7 @@ export type AppsDetailsViewType = 'tree' | 'network' | 'list';
 export interface AppDetailsPreferences {
     resourceFilter: string[];
     view: AppsDetailsViewType;
-    resourceView: 'manifest' | 'diff';
-    hideDefaultedFields: boolean;
+    resourceView: 'manifest' | 'diff' | 'desiredManifest';
     inlineDiff: boolean;
     compactDiff: boolean;
     orphanedResources: boolean;
@@ -14,15 +13,45 @@ export interface AppDetailsPreferences {
 
 export type AppsListViewType = 'tiles' | 'list' | 'summary';
 
-export interface AppsListPreferences {
-    labelsFilter: string[];
-    projectsFilter: string[];
-    reposFilter: string[];
-    syncFilter: string[];
-    healthFilter: string[];
-    namespacesFilter: string[];
-    clustersFilter: string[];
-    view: AppsListViewType;
+export class AppsListPreferences {
+    public static countEnabledFilters(pref: AppsListPreferences) {
+        // tslint:disable-next-line: prettier
+        return [
+            pref.clustersFilter,
+            pref.healthFilter,
+            pref.labelsFilter,
+            pref.namespacesFilter,
+            pref.projectsFilter,
+            pref.reposFilter,
+            pref.syncFilter
+        ].reduce((count, filter) => {
+                if (filter && filter.length > 0) {
+                    return count + 1;
+                }
+                return count;
+            },
+            0
+        );
+    }
+
+    public static clearFilters(pref: AppsListPreferences) {
+        pref.clustersFilter = [];
+        pref.healthFilter = [];
+        pref.labelsFilter = [];
+        pref.namespacesFilter = [];
+        pref.projectsFilter = [];
+        pref.reposFilter = [];
+        pref.syncFilter = [];
+    }
+
+    public labelsFilter: string[];
+    public projectsFilter: string[];
+    public reposFilter: string[];
+    public syncFilter: string[];
+    public healthFilter: string[];
+    public namespacesFilter: string[];
+    public clustersFilter: string[];
+    public view: AppsListViewType;
 }
 
 export interface ViewPreferences {
@@ -41,7 +70,6 @@ const DEFAULT_PREFERENCES: ViewPreferences = {
     appDetails: {
         view: 'tree',
         resourceFilter: ['kind:Deployment', 'kind:Service', 'kind:Pod', 'kind:StatefulSet', 'kind:Ingress', 'kind:ConfigMap', 'kind:Job', 'kind:DaemonSet', 'kind:Workflow'],
-        hideDefaultedFields: false,
         inlineDiff: false,
         compactDiff: false,
         resourceView: 'manifest',

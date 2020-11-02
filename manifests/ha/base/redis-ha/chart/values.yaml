@@ -5,3 +5,7 @@ redis-ha:
     masterGroupName: argocd
     config:
       save: "\"\""
+  haproxy:
+    enabled: true
+  image:
+    tag: 5.0.8-alpine

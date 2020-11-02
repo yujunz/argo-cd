@@ -5,11 +5,16 @@ import * as models from '../models';
 export interface ProjectParams {
     name: string;
     description: string;
+    labels: {[name: string]: string};
     sourceRepos: string[];
     destinations: models.ApplicationDestination[];
     roles: models.ProjectRole[];
     clusterResourceWhitelist: models.GroupKind[];
+    clusterResourceBlacklist: models.GroupKind[];
     namespaceResourceBlacklist: models.GroupKind[];
+    namespaceResourceWhitelist: models.GroupKind[];
+    orphanedResourceIgnoreList: models.OrphanedResource[];
+    signatureKeys: models.ProjectSignatureKey[];
     orphanedResourcesEnabled: boolean;
     orphanedResourcesWarn: boolean;
     syncWindows: models.SyncWindow[];
@@ -62,14 +67,13 @@ function paramsToProjRole(params: ProjectRoleParams): models.ProjectRole {
         name: params.roleName,
         description: params.description,
         policies: newPolicies,
-        jwtTokens: params.jwtTokens,
         groups: params.groups
     };
 }
 
 function paramsToProj(params: ProjectParams) {
     return {
-        metadata: {name: params.name},
+        metadata: {name: params.name, labels: params.labels},
         spec: {
             description: params.description,
             sourceRepos: params.sourceRepos,
@@ -77,22 +81,30 @@ function paramsToProj(params: ProjectParams) {
             roles: params.roles,
             syncWindows: params.syncWindows,
             clusterResourceWhitelist: params.clusterResourceWhitelist,
+            clusterResourceBlacklist: params.clusterResourceBlacklist,
             namespaceResourceBlacklist: params.namespaceResourceBlacklist,
-            orphanedResources: (params.orphanedResourcesEnabled && {warn: !!params.orphanedResourcesWarn}) || null
+            namespaceResourceWhitelist: params.namespaceResourceWhitelist,
+            signatureKeys: params.signatureKeys,
+            orphanedResources: (params.orphanedResourcesEnabled && {warn: !!params.orphanedResourcesWarn, ignore: params.orphanedResourceIgnoreList}) || null
         }
     };
 }
 
 export class ProjectsService {
-    public list(): Promise<models.Project[]> {
+    public list(...fields: string[]): Promise<models.Project[]> {
         return requests
             .get('/projects')
+            .query({fields: fields.join(',')})
             .then(res => res.body as models.ProjectList)
             .then(list => list.items || []);
     }
 
     public get(name: string): Promise<models.Project> {
         return requests.get(`/projects/${name}`).then(res => res.body as models.Project);
+    }
+
+    public getGlobalProjects(name: string): Promise<models.Project[]> {
+        return requests.get(`/projects/${name}/globalprojects`).then(res => res.body.items as models.Project[]);
     }
 
     public delete(name: string): Promise<boolean> {
@@ -103,6 +115,13 @@ export class ProjectsService {
         return requests
             .post('/projects')
             .send({project: paramsToProj(params)})
+            .then(res => res.body as models.Project);
+    }
+
+    public async updateProj(project: models.Project): Promise<models.Project> {
+        return requests
+            .put(`/projects/${project.metadata.name}`)
+            .send({project})
             .then(res => res.body as models.Project);
     }
 

@@ -1,14 +1,562 @@
 # Changelog
 
-## v1.3.0-rc2 (2019-10-23)
+## v1.7.2 (2020-08-27)
 
-- Issue #2339 - Controller should compare with latest git revision if app has changed (#2543)
-- Unknown child app should not affect app health (#2544)
-- Redact secrets in dex logs (#2538)
-- Allows Helm parameters that contains arrays or maps.  (#2525)
-- Set cookie policy to SameSite=lax and httpOnly (#2498)
+- fix: Sync hangs with cert-manager on latest RC (#4105)
+- fix: support for PKCE for cli login (#2932)
 
-## v1.3.0-rc1 (2019-10-16)
+## v1.7.2 (2020-08-25)
+
+- fix: Unable to create project JWT token on K8S v1.15 (#4165)
+- fix: Argo CD does not exclude creationTimestamp from diffing (#4157)
+
+## v1.7.0 (2020-08-24)
+
+### GnuPG Signature Verification
+
+The feature allows to only sync against commits that are signed in Git using GnuPG. The list of public 
+GPG keys required for verification is configured at the system level and can be managed using Argo CD CLI or Web user interface.
+The keys management is integrated with Argo CD SSO and access control system (e.g. `argocd gpg add --from <path-to-key>`)
+
+The signature verification is enabled on the project level. The ApplicationProject CRD has a new signatureKeys field that includes
+a list of imported public GPG keys. Argo CD will verify the commit signature by these keys for every project application.
+
+### Cluster Management Enhancements
+
+The feature allows using the cluster name instead of the URL to specify the application destination cluster.
+Additionally, the cluster CLI and Web user interface have been improved. Argo CD operators now can view and edit cluster
+details using the Cluster Details page. The page includes cluster settings details as well as runtime information such
+as the number of monitored Kubernetes resources.
+
+### Diffing And Synchronization Usability
+
+* **Diffing logic improvement** Argo CD performs client-side resource diffing to detect deviations and present detected
+differences in the UI and CLI. The 1.7 release aligns a comparison algorithm with server-side Kubernetes implementation
+and removes inaccuracies in some edge cases.
+
+* **Helm Hooks Compatibility** The improvement removes the discrepancy between the way how Argo CD and Helm deletes
+hooks resources. This significantly improves the compatibility and enables additional use cases.
+
+* **Namespace Auto-Creation** With a new option for applications Argo CD will ensure that namespace specified as the
+application destination exists in the destination cluster. 
+
+* **Failed Sync Retry** This feature enables retrying of failed synchronization attempts during both manually-triggered
+and automated synchronization.
+
+### Orphaned Resources Monitoring Enhancement
+
+The enhancement allows configuring an exception list in Orphaned Resources settings to avoid false alarms.
+
+## v1.6.2 (2020-08-01)
+
+- feat: adding validate for app create and app set (#4016)
+- fix: use glob matcher in casbin built-in model (#3966)
+- fix: Normalize Helm chart path when chart name contains a slash (#3987)
+- fix: allow duplicates when using generateName (#3878)
+- fix: nil pointer dereference while syncing an app (#3915)
+
+## v1.6.1 (2020-06-18)
+
+- fix: User unable to generate project token even if account has appropriate permissions (#3804)
+
+## v1.6.0 (2020-06-16)
+
+[1.6 Release blog post](https://blog.argoproj.io/argo-cd-v1-6-democratizing-gitops-with-gitops-engine-5a17cfc87d62)
+
+### GitOps Engine
+
+As part of 1.6 release, the core Argo CD functionality has been moved into [GitOps Engine](https://github.com/argoproj/gitops-engine).
+GitOps Engine is a reusable library that empowers you to quickly build specialized tools that implement specific GitOps
+use cases, such as bootstrapping a Kubernetes cluster, or decentralized management of namespaces.
+
+#### Enhancements
+
+- feat: upgrade kustomize to v3.6.1 version (#3696)
+- feat: Add build support for ARM images (#3554)
+- feat: CLI: Allow setting Helm values literal (#3601) (#3646)
+- feat: argocd-util settings resource-overrides list-actions (#3616)
+- feat: adding failure retry (#3548)
+- feat: Implement GKE ManagedCertificate CRD health checks (#3600)
+- feat: Introduce diff normalizer knobs and allow for ignoring aggregated cluster roles (#2382) (#3076)
+- feat: Implement Crossplane CRD health checks (#3581)
+- feat: Adding deploy time and duration label (#3563)
+- feat: support delete cluster from UI (#3555)
+- feat: add button loading status for time-consuming operations (#3559)
+- feat: Add --logformat switch to API server, repository server and controller (#3408)
+- feat: Add a Get Repo command to see if Argo CD has a repo (#3523)
+- feat: Allow selecting TLS ciphers on server (#3524)
+- feat: Support additional metadata in Application sync operation (#3747)
+- feat: upgrade redis to 5.0.8-alpine (#3783)
+
+#### Bug Fixes
+
+- fix: settings manager should invalidate cache after updating repositories/repository credentials (#3672)
+- fix: Allow unsetting the last remaining values file (#3644) (#3645)
+- fix: Read cert data from kubeconfig during cluster addition and use if present (#3655) (#3667)
+- fix: oidc should set samesite cookie (#3632)
+- fix: Allow underscores in hostnames in certificate module (#3596)
+- fix: apply scopes from argocd-rbac-cm to project jwt group searches (#3508)
+- fix: fix nil pointer dereference error after cluster deletion (#3634)
+- fix: Prevent possible nil pointer dereference when getting Helm client (#3613)
+- fix: Allow CLI version command to succeed without server connection (#3049) (#3550)
+- fix: Fix login with port forwarding (#3574)
+- fix: use 'git show-ref' to both retrieve and store generated manifests (#3578)
+- fix: enable redis retries; add redis request duration metric (#3575)
+- fix: Disable keep-alive for HTTPS connection to Git (#3531)
+- fix: use uid instead of named user in Dockerfile (#3108)
+
+#### Other
+
+- refactoring: Gitops engine (#3066)
+
+## v1.5.8 (2020-06-16)
+
+- fix: upgrade awscli version (#3774)
+- fix: html encode login error/description before rendering it (#3773)
+- fix: oidc should set samesite cookie (#3632)
+- fix: avoid panic in badge handler (#3741)
+
+## v1.5.7 (2020-06-09)
+
+The 1.5.7 patch release resolves issue #3719 . The ARGOCD_ENABLE_LEGACY_DIFF=true should be added to argocd-application-controller deployment.
+
+- fix: application with EnvoyFilter causes high memory/CPU usage (#3719)
+
+## v1.5.6 (2020-06-02)
+
+- feat: Upgrade kustomize to 3.6.1
+- fix: Prevent possible nil pointer dereference when getting Helm client (#3613)
+- fix: avoid deadlock in settings manager (#3637)
+
+## v1.5.5 (2020-05-16)
+
+- feat: add Rollout restart action (#3557)
+- fix: enable redis retries; add redis request duration metric (#3547)
+- fix: when --rootpath is on, 404 is returned when URL contains encoded URI (#3564)
+
+## v1.5.4 (2020-05-05)
+
+- fix: CLI commands with --grpc-web
+
+## v1.5.3 (2020-05-01)
+
+This patch release introduces a set of enhancements and bug fixes. Here are most notable changes:
+
+#### Multiple Kustomize Versions
+
+The bundled Kustomize version had been upgraded to v3.5.4. Argo CD allows changing bundled version using
+[custom image or init container](https://argoproj.github.io/argo-cd/operator-manual/custom_tools/). 
+This [feature](https://argoproj.github.io/argo-cd/user-guide/kustomize/#custom-kustomize-versions)
+enables bundling multiple Kustomize versions at the same time and allows end-users to specify the required version per application.
+
+#### Custom Root Path
+
+The feature allows accessing Argo CD UI and API using a custom root path(for example https://myhostname/argocd).
+This enables running Argo CD behind a proxy that takes care of user authentication (such as Ambassador) or hosting
+multiple Argo CD using the same hostname. A set of bug fixes and enhancements had been implemented to makes it easier.
+Use new `--rootpath` [flag](https://argoproj.github.io/argo-cd/operator-manual/ingress/#argocd-server-and-ui-root-path-v153) to enable the feature.
+
+### Login Rate Limiting
+
+The feature prevents a built-in user password brute force attack and addresses the known 
+[vulnerability](https://argoproj.github.io/argo-cd/security_considerations/#cve-2020-8827-insufficient-anti-automationanti-brute-force).
+
+### Settings Management Tools
+
+A new set of [CLI commands](https://argoproj.github.io/argo-cd/operator-manual/troubleshooting/) that simplify configuring Argo CD.
+Using the CLI you can test settings changes offline without affecting running Argo CD instance and have ability to troubleshot diffing
+customizations, custom resource health checks, and more.
+
+### Other
+
+* New Project and Application CRD settings ([#2900](https://github.com/argoproj/argo-cd/issues/2900), [#2873](https://github.com/argoproj/argo-cd/issues/2873)) that allows customizing Argo CD behavior.
+* Upgraded Dex (v2.22.0) enables seamless [SSO integration](https://www.openshift.com/blog/openshift-authentication-integration-with-argocd) with Openshift.
+
+
+#### Enhancements
+
+* feat: added --grpc-web-root-path for CLI. (#3483)
+* feat: limit the maximum number of concurrent login attempts (#3467)
+* feat: upgrade kustomize version to 3.5.4 (#3472)
+* feat: upgrade dex to 2.22.0 (#3468)
+* feat: support user specified account token ids (#3425)
+* feat: support separate Kustomize version per application (#3414)
+* feat: add support for dex prometheus metrics (#3249)
+* feat: add settings troubleshooting commands to the 'argocd-util' binary (#3398)
+* feat: Let user to define meaningful unique JWT token name (#3388)
+* feat: Display link between OLM ClusterServiceVersion and it's OperatorGroup (#3390)
+* feat: Introduce sync-option SkipDryRunOnMissingResource=true (#2873) (#3247)
+* feat: support normalizing CRD fields that use known built-in K8S types (#3357)
+* feat: Whitelisted namespace resources (#2900)
+
+#### Bug Fixes
+
+* fix: added path to cookie (#3501)
+* fix: 'argocd sync' does not take into account IgnoreExtraneous annotation (#3486)
+* fix: CLI renders flipped diff results (#3480)
+* fix: GetApplicationSyncWindows API should not validate project permissions (#3456)
+* fix: argocd-util kubeconfig should use RawRestConfig to export config (#3447)
+* fix: javascript error on accounts list page (#3453)
+* fix: support both <group>/<kind> as well as <kind> as a resource override key (#3433)
+* fix: Updating to jsonnet v1.15.0 fix issue #3277 (#3431)
+* fix for helm repo add with flag --insecure-skip-server-verification (#3420)
+* fix: app diff --local support for helm repo. #3151 (#3407)
+* fix: Syncing apps incorrectly states "app synced", but this is not true (#3286)
+* fix: for jsonnet when it is localed in nested subdirectory and uses import (#3372)
+* fix: Update 4.5.3 redis-ha helm manifest (#3370)
+* fix: return 401 error code if username does not exist (#3369)
+* fix: Do not panic while running hooks with short revision (#3368)
+
+## v1.5.2 (2020-04-20)
+
+#### Critical security fix
+
+This release contains a critical security fix. Please refer to the
+[security document](https://argoproj.github.io/argo-cd/security_considerations/#CVE-2020-5260-possible-git-credential-leak)
+for more information.
+
+**Upgrading is strongly recommended**
+
+## v1.4.3 (2020-04-20)
+
+#### Critical security fix
+
+This release contains a critical security fix. Please refer to the
+[security document](https://argoproj.github.io/argo-cd/security_considerations/#CVE-2020-5260-possible-git-credential-leak)
+for more information.
+
+## v1.5.1 (2020-04-06)
+
+#### Bug Fixes
+
+* fix: return 401 error code if username does not exist (#3369)
+* fix: Do not panic while running hooks with short revision (#3368)
+* fix: Increase HAProxy check interval to prevent intermittent failures (#3356)
+* fix: Helm v3 CRD are not deployed (#3345)
+
+## v1.5.0 (2020-04-02)
+
+#### Helm Integration Enhancements - Helm 3 Support And More
+
+Introduced native support Helm3 charts. For backward compatibility Helm 2 charts are still rendered using Helm 2 CLI. Argo CD inspects the
+Charts.yaml file and choose the right binary based on `apiVersion` value.
+
+Following enhancement were implemented in addition to Helm 3:
+* The `--api-version` flag is passed to the `helm template` command during manifest generation.
+* The `--set-file` flag can be specified in the application specification.
+* Fixed bug that prevents automatically update Helm chart when new version is published (#3193)
+
+#### Better Performance and Improved Metrics
+
+ If you are running Argo CD instances with several hundred applications on it, you should see a
+ huge performance boost and significantly less Kubernetes API server load.
+
+ The Argo CD controller Prometheus metrics have been reworked to enable a richer Grafana dashboard.
+ The improved dashboard is available at [examples/dashboard.json](https://github.com/argoproj/argo-cd/blob/master/examples/dashboard.json).
+ You can set `ARGOCD_LEGACY_CONTROLLER_METRICS=true` environment variable and use [examples/dashboard-legacy.json](https://github.com/argoproj/argo-cd/blob/master/examples/dashboard-legacy.json)
+ to keep using old dashboard.
+
+#### Local accounts
+
+The local accounts had been introduced additional to `admin` user and SSO integration. The feature is useful for creating authentication
+tokens with limited permissions to automate Argo CD management. Local accounts also could be used small by teams when SSO integration is overkill.
+This enhancement also allows to disable admin user and enforce only SSO logins.
+
+#### Redis HA Proxy mode
+
+As part of this release, the bundled Redis was upgraded to version 4.3.4 with enabled HAProxy.
+The HA proxy replaced the sentinel and provides more reliable Redis connection.
+
+> After publishing 1.5.0 release we've discovered that default HAProxy settings might cause intermittent failures.
+> See [argo-cd#3358](https://github.com/argoproj/argo-cd/issues/3358)
+
+#### Windows CLI
+
+Windows users deploy to Kubernetes too! Now you can use Argo CD CLI on Linux, Mac OS, and Windows. The Windows compatible binary is available 
+in the release details page as well as on the Argo CD Help page.
+
+#### Breaking Changes
+
+The `argocd_app_sync_status`, `argocd_app_health_status` and `argocd_app_created_time` prometheus metrics are deprecated in favor of additional labels
+to `argocd_app_info` metric. The deprecated labels are still available can be re-enabled using `ARGOCD_LEGACY_CONTROLLER_METRICS=true` environment variable.
+The legacy example Grafana dashboard is available at [examples/dashboard-legacy.json](https://github.com/argoproj/argo-cd/blob/master/examples/dashboard-legacy.json). 
+
+####  Known issues
+Last-minute bugs that will be addressed in 1.5.1 shortly:
+ 
+* https://github.com/argoproj/argo-cd/issues/3336
+* https://github.com/argoproj/argo-cd/issues/3319
+* https://github.com/argoproj/argo-cd/issues/3339
+* https://github.com/argoproj/argo-cd/issues/3358
+
+#### Enhancements
+* feat: support helm3 (#2383) (#3178)
+* feat: Argo CD Service Account / Local Users #3185
+* feat: Disable Admin Login (fixes #3019) (#3179)
+* feat(ui): add docs to sync policy options present in create application panel (Close #3098) (#3203)
+* feat: add "service-account" flag to "cluster add" command (#3183) (#3184)
+* feat: Supports the validate-false option at an app level. Closes #1063 (#2542)
+* feat: add dest cluster and namespace in the Events (#3093)
+* feat: Rollback disables auto sync issue #2441 (#2591)
+* feat: allow ssh and http repository references in bitbucketserver webhook #2773 (#3036)
+* feat: Add helm --set-file support (#2751)
+* feat: Include resource group for Event's InvolvedObject.APIVersion
+* feat: Add argocd cmd for Windows #2121 (#3015)
+
+#### Bug Fixes
+
+- fix: app reconciliation fails with panic: index out of (#3233)
+- fix: upgrade argoproj/pkg version to fix leaked sensitive information in logs (#3230)
+- fix: set MaxCallSendMsgSize to MaxGRPCMessageSize for the GRPC caller (#3117)
+- fix: stop caching helm index (#3193)
+- fix: dex proxy should forward request to dex preserving the basehref (#3165)
+- fix: set default login redirect to baseHRef (#3164)
+- fix: don't double-prepend basehref to redirect URLs (fixes #3137)
+- fix: ui referring to /api/version using absolute path (#3092)
+- fix: Unhang UI on long app info items by using more sane URL match pattern (#3159)
+- fix: Allow multiple hostnames per SSH known hosts entry and also allow IPv6 (#2814) (#3074)
+- fix: argocd-util backup produced truncated backups. import app status (#3096)
+- fix: upgrade redis-ha chart and enable haproxy (#3147)
+- fix: make dex server deployment init container resilient to restarts (#3136)
+- fix: reduct secret values of manifests stored in git (#3088)
+- fix: labels not being deleted via UI (#3081)
+- fix: HTTP|HTTPS|NO_PROXY env variable reading #3055 (#3063)
+- fix: Correct usage text for repo add command regarding insecure repos (#3068)
+- fix: Ensure SSH private key is written out with a final newline character (#2890) (#3064)
+- fix: Handle SSH URLs in 'git@server:org/repo' notation correctly (#3062)
+- fix sso condition when several sso connectors has been configured (#3057)
+- fix: Fix bug where the same pointer is used. (#3059)
+- fix: Opening in new tab bad key binding on Linux (#3020)
+- fix: K8s secrets for repository credential templates are not deleted when credential template is deleted (#3028)
+- fix: SSH credential template not working #3016
+- fix: Unable to parse kubectl pre-release version strings (#3034)
+- fix: Jsonnet TLA parameters of same type are overwritten (#3022)
+- fix: Replace aws-iam-authenticator to support IRSA (#3010)
+- fix: Hide bindPW in dex config (#3025)
+- fix: SSH repo URL with a user different from `git` is not matched correctly when resolving a webhook (#2988)
+- fix: JWT invalid => Password for superuser has changed since token issued (#2108)
+
+#### Contributors
+* alexandrfox
+* alexec
+* alexmt
+* bergur88
+* CBytelabs
+* dbeal-wiser 
+* dnascimento
+* Elgarni
+* eSamS
+* gpaul
+* jannfis
+* jdmulloy
+* machgo
+* masa213f
+* matthyx
+* rayanebel
+* shelby-moore
+* tomcruise81
+* wecger
+* zeph
+
+## v1.4.2 (2020-01-24)
+
+- fix: correctly replace cache in namespace isolation mode (#3023)
+
+## v1.4.1 (2020-01-23)
+
+- fix: impossible to config RBAC if group name includes ',' (#3013)
+
+## v1.4.0 (2020-01-17)
+
+The v1.4.0 is a stability release that brings multiple bug fixes, security, performance enhancements, and multiple usability improvements.
+
+#### New Features
+
+#### Security
+A number of security enhancements and features have been implemented (thanks to [@jannfis](https://github.com/jannfis) for driving it! ):
+* **Repository Credential Templates Management UI/CLI**. Now you can use Argo CD CLI or UI to configure
+[credentials template](https://argoproj.github.io/argo-cd/user-guide/private-repositories/#credential-templates) for multiple repositories!
+* **X-Frame-Options header on serving static assets**. The X-Frame-Options prevents third party sites to trick users into interacting with the application.
+* **Tighten AppProject RBAC enforcement**. We've improved the enforcement of access rules specified in the
+[application project](https://argoproj.github.io/argo-cd/operator-manual/declarative-setup/#projects) configuration.
+
+#### Namespace Isolation
+With the namespace isolation feature, you are no longer have to give full read-only cluster access to the Argo CD. Instead, you can give access only to selected namespaces with-in
+the cluster:
+
+```bash
+argocd cluster add <mycluster> --namespace <mynamespace1> --namespace <mynamespace2>
+```
+
+This feature is useful if you don't have full cluster access but still want to use Argo CD to manage some cluster namespaces. The feature also improves performance if Argo CD is
+used to manage a few namespaces of a large cluster.
+
+#### Reconciliation Performance
+The Argo CD no longer fork/exec `kubectl` to apply resource changes in the target cluster or convert resource manifest to the required manifest version. This reduces
+CPU and Memory usage of large Argo CD instances.
+
+#### Resources Health based Hook Status
+The existing Argo CD [resource hooks](https://argoproj.github.io/argo-cd/user-guide/resource_hooks/) feature allows running custom logic during the syncing process. You can mark
+any Kubernetes resource as a hook and Argo CD assess hook status if resource is a `Pod`, `Job` or `Argo Workflow`. In the v1.4.0 release Argo CD is going to leverage resource
+[health assessment](https://argoproj.github.io/argo-cd/operator-manual/health/) to get sync hook status. This allows using any custom CRD as a sync hook and leverage custom health
+check logic.
+
+#### Manifest Generation
+* **Track Helm Charts By Semantic Version**. You've been able to track charts hosted in Git repositories using branches to tags. This is now possible for Helm charts. You no longer
+ need to choose the exact version, such as v1.4.0 ,instead you can use a semantic version constraint such as v1.4.* and the latest version that matches will be installed.
+* **Build Environment Variables**. Feature allows config management tool to get access to app details during manifest generation via
+[environment variables](https://argoproj.github.io/argo-cd/user-guide/build-environment/).
+* **Git submodules**. Argo CD is going to automatically fetch sub-modules if your repository has `.gitmodules` directory.
+
+#### UI and CLI
+* **Improved Resource Tree View**. The Application details page got even prettier. The resource view was tuned to fit more resources into the screen, include more information about
+each resource and don't lose usability at the same time.
+* **New Account Management CLI Command**. The CLI allows to check which actions are allowed for your account: `argocd account can-i sync applications '*'`
+
+#### Maintenance Tools
+The team put more effort into building tools that help to maintain Argo CD itself:
+* **Bulk Project Editing**. The `argocd-util` allows to add and remove permissions defined in multiple project roles using one command.
+* **More Prometheus Metrics**. A set of additional metrics that contains useful information managed clusters is exposed by application controller.
+
+More documentation and tools are coming in patch releases.
+
+#### Breaking Changes
+
+The Argo CD deletes all **in-flight** hooks if you terminate running sync operation. The hook state assessment change implemented in this release the Argo CD enables detection of 
+an in-flight state for all Kubernetes resources including `Deployment`, `PVC`, `StatefulSet`, `ReplicaSet` etc. So if you terminate the sync operation that has, for example,
+`StatefulSet` hook that is `Progressing` it will be deleted. The long-running jobs are not supposed to be used as a sync hook and you should consider using
+[Sync Waves](https://argoproj.github.io/argo-cd/user-guide/sync-waves/) instead.
+
+#### Enhancements
+* feat: Add custom healthchecks for cert-manager v0.11.0 (#2689) 
+* feat: add git submodule support (#2495)
+* feat: Add repository credential management API and CLI (addresses #2136) (#2207)
+* feat: add support for --additional-headers cli flag (#2467)
+* feat: Add support for ssh-with-port repo url (#2866) (#2948)
+* feat: Add Time to ApplicationCondition. (#2417)
+* feat: Adds `argocd auth can-i` command. Close #2255
+* feat: Adds revision history limit. Closes #2790 (#2818)
+* feat: Adds support for ARGO_CD_[TARGET_REVISION|REVISION] and pass to Custom Tool/Helm/Jsonnet 
+* feat: Adds support for Helm charts to be a semver range. Closes #2552 (#2606)
+* feat: Adds tracing to key external invocations. (#2811)
+* feat: argocd-util should allow editing project policies in bulk  (#2615)
+* feat: Displays controllerrevsion's revision in the UI. Closes #2306 (#2702)
+* feat: Issue #2559 - Add gauge Prometheus metric which represents the number of pending manifest requests. (#2658)
+* feat: Make ConvertToVersion maybe 1090% faster on average (#2820)
+* feat: namespace isolation (#2839)
+* feat: removes redundant mutex usage in controller cache and adds cluster cache metrics (#2898)
+* feat: Set X-Frame-Options on serving static assets (#2706) (#2711)
+* feat: Simplify using Argo CD without users/SSO/UI (#2688)
+* feat: Template Out Data Source in Grafana Dashboard (#2859) 
+* feat: Updates UI icons. Closes #2625 and #2757 (#2653)
+* feat: use editor arguments in InteractiveEditor (#2833)
+* feat: Use kubectl apply library instead of forking binary (#2861)
+* feat: use resource health for hook status evaluation (#2938)
+
+#### Bug Fixes
+
+- fix: Adds support for /api/v1/account* via HTTP. Fixes #2664 (#2701)
+- fix: Allow '@'-character in SSH usernames when connecting a repository (#2612)
+- fix: Allow dot in project policy. Closes #2724 (#2755)
+- fix: Allow you to sync local Helm apps.  Fixes #2741 (#2747)
+- fix: Allows Helm parameters that contains arrays or maps. (#2525)
+- fix: application-controller doesn't deal with rm/add same cluster gracefully (x509 unknown) (#2389)
+- fix: diff local ignore kustomize build options (#2942)
+- fix: Ensures that Helm charts are correctly resolved before sync. Fixes #2758 (#2760)
+- fix: Fix 'Open application' link when using basehref (#2729)
+- fix: fix a bug with cluster add when token secret is not first in list. (#2744)
+- fix: fix bug where manifests are not cached. Fixes #2770 (#2771)
+- fix: Fixes bug whereby retry does not work for CLI. Fixes #2767 (#2768)
+- fix: git contention leads applications into Unknown state (#2877)
+- fix: Issue #1944 - Gracefully handle missing cached app state (#2464)
+- fix: Issue #2668 - Delete a specified context (#2669)
+- fix: Issue #2683 - Make sure app update don't fail due to concurrent modification (#2852)
+- fix: Issue #2721 Optimize helm repo querying (#2816)
+- fix: Issue #2853 - Improve application env variables/labels editing (#2856)
+- fix: Issue 2848 - Application Deployment history panel shows incorrect info for recent releases (#2849)
+- fix: Make BeforeHookCreation the default. Fixes #2754 (#2759)
+- fix: No error on `argocd app create` in CLI if `--revision` is omitted #2665
+- fix: Only delete resources during app delete cascade if permitted to (fixes #2693) (#2695)
+- fix: prevent user from seeing/deleting resources not permitted in project (#2908) (#2910)
+- fix: self-heal should retry syncing an application after specified delay
+- fix: stop logging dex config secrets #(2904) (#2937)
+- fix: stop using jsondiffpatch on clientside to render resource difference  (#2869)
+- fix: Target Revision truncated #2736
+- fix: UI should re-trigger SSO login if SSO JWT token expires (#2891)
+- fix: update argocd-util import was not working properly (#2939)
+
+#### Contributors
+
+* Aalok Ahluwalia
+* Aananth K
+* Abhishek Jaisingh
+* Adam Johnson
+* Alan Tang
+* Alex Collins
+* Alexander Matyushentsev
+* Andrew Waters
+* Byungjin Park
+* Christine Banek
+* Daniel Helfand
+* David Hong
+* David J. M. Karlsen
+* David Maciel
+* Devan Goodwin
+* Devin Stein
+* dthomson25
+* Gene Liverman
+* Gregor Krmelj
+* Guido Maria Serra
+* Ilir Bekteshi
+* Imran Ismail
+* INOUE BANJI
+* Isaac Gaskin
+* jannfis
+* Jeff Hastings
+* Jesse Suen
+* John Girvan
+* Konstantin
+* Lev Aminov
+* Manatsawin Hanmongkolchai
+* Marco Schmid
+* Masayuki Ishii
+* Michael Bridgen
+* Naoki Oketani
+* niqdev
+* nitinpatil1992
+* Olivier Boukili
+* Olivier Lemasle
+* Omer Kahani
+* Paul Brit
+* Qingbo Zhou
+* Saradhi Sreegiriraju
+* Scott Cabrinha
+* shlo
+* Simon Behar
+* stgarf
+* Yujun Zhang
+* Zoltán Reegn
+
+## v1.3.4 (2019-12-05)
+- #2819 Fixes logging of tracing option in CLI
+
+## v1.3.3 (2019-12-05)
+- #2721 High CPU utilisation (5 cores) and spammy logs
+
+## v1.3.2 (2019-12-03)
+- #2797 Fix directory traversal edge case and enhance tests
+
+## v1.3.1 (2019-12-02)
+- #2664 update account password from API resulted 404
+- #2724 Can't use `DNS-1123` compliant app name when creating project role
+- #2726 App list does not show chart for Helm app
+- #2741 argocd local sync cannot parse kubernetes version
+- #2754 BeforeHookCreation should be the default hook
+- #2767 Fix bug whereby retry does not work for CLI
+- #2770 Always cache miss for manifests
+- #1345 argocd-application-controller: can not retrieve list of objects using index : Index with name namespace does not exist
+
+## v1.3.0 (2019-11-13)
 
 #### New Features
 
@@ -22,7 +570,9 @@ https://youtu.be/GP7xtrnNznw
 
 ##### Orphan Resources
 
-Some users would like to make sure that resources in a namespace are managed only by Argo CD. So we've introduced the concept of an "orphan resource" - any resource that is in namespace associated with an app, but not managed by Argo CD. This is enable in the project settings. Once enabled, Argo CD will show in the app view any resources in the app's namepspace that is not mananged by Argo CD. 
+Some users would like to make sure that resources in a namespace are managed only by Argo CD. So we've introduced the concept of an "orphan resource" - any resource that is in namespace associated with an app, but not managed by Argo CD. This is enabled in the project settings. Once enabled, Argo CD will show in the app view any resources in the app's namespace that is not managed by Argo CD. 
+
+https://youtu.be/9ZoTevVQf5I
 
 ##### Sync Windows
 
@@ -30,137 +580,110 @@ There may be instances when you want to control the times during which an Argo C
 
 #### Enhancements
 
-* Issue #2396 argocd list command should have filter options like by pr… (#2421)
-* Adds support for Helm 1st-class. Closes #1145 (#1865)
-* Issue #1167 - Implement orphan resources support (#2103)
-* Helm hooks. Closes #355 (#2069)
-* Adds support for a literal YAML block of Helm values. Closes #1930  (#2057)
-* Adds support for hook-delete-policy: BeforeHookCreation. Closes #2036 (#2048)
-* Adds support for setting Helm string parameters via CLI. Closes #2078 (#2109)
+* [UI] Add application labels to Applications list and Applications details page (#1099)
+* Helm repository as first class Argo CD Application source (#1145)
+* Ability to generate a warn/alert when a namespace deviates from the expected state (#1167)
+* Improve diff support for resource requests/limits (#1615)
+* HTTP API should allow JWT to be passed via Authorization header (#1642)
+* Ability to create & upsert projects from spec (#1852)
+* Support for in-line block from helm chart values (#1930)
+* Request OIDC groups claim if groups scope is not supported (#1956)
+* Add a maintenance window for Applications with automated syncing (#1995)
+* Support `argocd.argoproj.io/hook-delete-policy: BeforeHookCreation` (#2036)
+* Support setting Helm string parameters using CLI/UI (#2078)
+* Config management plugin environment variable UI/CLI support (#2203)
+* Helm: auto-detect URLs (#2260)
+* Helm: UI improvements (#2261)
+* Support `helm template --kube-version ` (#2275)
+* Use community icons for resources (#2277)
+* Make `group` optional for `ignoreDifferences` config (#2298)
+* Update Helm docs (#2315)
+* Add cluster information into Splunk (#2354)
+* argocd list command should have filter options like by project (#2396)
+* Add target/current revision to status badge (#2445)
+* Update tooling to use Kustomize v3 (#2487)
+* Update root `Dockerfile` to use the `hack/install.sh` (#2488)
+* Support and document using HPA for repo-server (#2559)
+* Upgrade Helm  (#2587)
+* UI fixes for "Sync Apps" panel. (#2604)
+* Upgrade kustomize from v3.1.0 to v3.2.1 (#2609)
+* Map helm lifecycle hooks to ArgoCD pre/post/sync hooks (#355)
+* [UI] Enhance app creation page with Helm parameters overrides (#1059)
 
 #### Bug Fixes
 
-- Issue #2484 - Impossible to edit chart name using App details page (#2485)
-- Issue #2185 - Manual sync don't trigger hooks (#2477)
-- Issue #2453 - Application controller sometimes accidentally removes duplicated/excluded resource warning condition (#2454)
-- Issue #1944 - Gracefully handle missing cached app state (#2464)
-- Issue #2321 - Hook deletion should not fail if error message is not found (#2458)
-- Issue #2448 - Custom resource actions cannot be executed from the UI (#2449)
-- Issue #2339 - Make sure controller uses latest git version if app reconciliation result expired (#2346)
-- Issue #2290 - Fix nil pointer dereference in application controller (#2291)
-- Issue #2245 - Intermittent "git ls-remote" request failures should not fail app reconciliation (#2281)
-- Issue #2022 - Support limiting number of concurrent kubectl fork/execs (#2264)
-- Fix degraded proxy support for http(s) git repository (#2243) (#2249)
-- Issue #2198 - Print empty string instead of Unknown in 'argocd app sync' output (#2223)
-- Fix for displaying hooks in app diff view. Fixes #2215 (#2218)
-- Issue #2212 - Correctly handle trailing slash in configured URL while creating redirect URL (#2214)
-- Deals with race condition when deleting resource. Closes #2141 (#2200)
-- Issue #2192 - SyncError app condition disappears during app reconciliation (#2193)
-- Adds test for updating immutable field, adds UI button to allow force from UI. See #2150 (#2155)
-- Issue #2174 - Fix git repo url parsing on application list view (#2175)
-- Issue #2146 - Fix nil pointer dereference error during app reconciliation (#2170)
-- Issue #2114 - Fix history api fallback implementation to support app names with dots (#2168)
-- Issue #2060 - Endpoint incorrectly considered top level managed resource (#2129)
-- Fixed truncation of group in UI. Closes #2006 (#2128)
-- Allow adding certs for hostnames ending on a dot (fixes #2116) (#2120)
-- Escape square brackets in pattern matching hostnames (fixes #2099) (#2113)
+- failed parsing on parameters with comma (#1660)
+- Statefulset with OnDelete Update Strategy stuck progressing (#1881)
+- Warning during secret diffing (#1923)
+- Error message "Unable to load data: key is missing" is confusing (#1944)
+- OIDC group bindings are truncated (#2006)
+- Multiple parallel app syncs causes OOM (#2022)
+- Unknown error when setting params with argocd app set on helm app (#2046)
+- Endpoint is no longer shown as a child of services (#2060)
+- SSH known hosts entry cannot be deleted if contains shell pattern in name (#2099)
+- Application 404s on names with periods (#2114)
+- Adding certs for hostnames ending with a dot (.) is not possible (#2116)
+- Fix `TestHookDeleteBeforeCreation` (#2141)
+- v1.2.0-rc1 nil pointer dereference when syncing (#2146)
+- Replacing services failure (#2150)
+- 1.2.0-rc1 - Authentication Required error in Repo Server (#2152)
+- v1.2.0-rc1 Applications List View doesn't work (#2174)
+- Manual sync does not trigger Presync hooks (#2185)
+- SyncError app condition disappears during app reconciliation (#2192)
+- argocd app wait\sync prints 'Unknown' for resources without health (#2198)
+- 1.2.0-rc2 Warning during secret diffing (#2206)
+- SSO redirect url is incorrect if configured Argo CD URL has trailing slash (#2212)
+- Application summary diff page shows hooks (#2215)
+- An app with a single resource and Sync hook remains progressing (#2216)
+- CONTRIBUTING documentation outdated (#2231)
+- v1.2.0-rc2 does not retrieve http(s) based git repository behind the proxy (#2243)
+- Intermittent "git ls-remote" request failures should not fail app reconciliation (#2245)
+- Result of ListApps operation for Git repo is cached incorrectly (#2263)
+- ListApps does not utilize cache (#2287)
+- Controller panics due to nil pointer error (#2290)
+- The Helm --kube-version support does not work on GKE: (#2303)
+- Fixes bug that prevents you creating repos via UI/CLI.  (#2308)
+- The 'helm.repositories' settings is dropped without migration path (#2316)
+- Badge response does not contain cache control header (#2317)
+- Inconsistent sync result from UI and CLI (#2321)
+- Failed edit application with plugin type requiring environment (#2330)
+- AutoSync doesn't work anymore (#2339)
+- End-to-End tests not working with Kubernetes v1.16 (#2371)
+- Creating an application from Helm repository should select "Helm" as source type (#2378)
+- The parameters of ValidateAccess GRPC method should not be logged  (#2386)
+- Maintenance window meaning is confusing (#2398)
+- UI bug when targetRevision is omitted (#2407)
+- Too many vulnerabilities in Docker image (#2425)
+- proj windows commands not consistent with other commands (#2443)
+- Custom resource actions cannot be executed from the UI (#2448)
+- Application controller sometimes accidentally removes duplicated/excluded resource warning condition (#2453)
+- Logic that checks sync windows state in the cli is incorrect (#2455)
+- UI don't allow to create window with `* * * * *` schedule (#2475)
+- Helm Hook is executed twice if annotated with both pre-install and pre-upgrade annotations (#2480)
+- Impossible to edit chart name using App details page (#2484)
+- ArgoCD does not provide CSRF protection (#2496)
+- ArgoCD failing to install CRDs in master from Helm Charts (#2497)
+- Timestamp in Helm package file name causes error in Application with Helm source (#2549)
+- Attempting to create a repo with password but not username panics (#2567)
+- UI incorrectly mark resources as `Required Pruning` (#2577)
+- argocd app diff prints only first difference (#2616)
+- Bump min client cache version (#2619)
+- Cluster list page fails if any cluster is not reachable (#2620)
+- Repository type should be mandatory for repo add command in CLI (#2622)
+- Repo server executes unnecessary ls-remotes (#2626)
+- Application list page incorrectly filter apps by label selector (#2633)
+- Custom actions are disabled in Argo CD UI (#2635)
+- Failure of `argocd version` in the self-building container image (#2645)
+- Application list page is not updated automatically anymore (#2655)
+- Login regression issues (#2659)
+- Regression: Cannot return Kustomize version for 3.1.0 (#2662)
+- API server does not allow creating role with action `action/*` (#2670)
+- Application controller `kubectl-parallelism-limit` flag is broken (#2673)
+- Annoying toolbar flickering (#2691)
 
-#### Other
+## v1.2.5 (2019-10-29)
 
-- Fix possible path traversal attack when supporting Helm `values.yaml` (#2452)
-- Fix UI crash on application list page (#2490)
-- add support for --additional-headers cli flag (#2467)
-- Allow collapse/expand helm values text (#2469)
-- Update base image to Debian buster (#2431)
-- Error with new  `actions run` suggestion (#2434)
-- Detach ArgoCD from specific workflow API (#2428)
-- Add application labels to Applications list and Applications details page (#2430)
-- Fix JS error on application creation page if no plugins configured (#2432)
-- Add missing externalURL for networking.k8s.io Ingress type (#2390)
-- App status panel shows metadata of current revision in git instead of most recent reconciled revision (#2419)
-- Adds support for plugin params.  (#2406)
-- Granular RBAC Support for actions (#2110)
-- Added Kustomize, Helm, and Kubectl to `argocd version` (#2329)
-- Stop unnecessary re-loading clusters on every app list page re-render (#2411)
-- Add project level maintenance windows for applications (#2380)
-- Make argo-cd docker images openshift friendly (#2362)
-- Add dest-server and dest-namespace field to reconciliation logs (#2388)
-- Add custom action example to argocd-cm.yaml (#2375)
-- Try out community icons.  (#2349)
-- Make `group` optional for `ignoreDifferences` setting (#2335)
-- Adds support for Github Enterprise URLs (#2344)
-- Add argocd project as variable to grafana dashboard (#2336)
-- Fix missing envs when updating application of content management plugin type (#2331)
-- util/localconfig: prefer HOME env var over os/user (#2326)
-- Auto-detect Helm repos + support Helm basic auth + fix bugs (#2309)
-- Add cache-control HTTP header to badge response (#2328)
-- Document flags/env variables useful for performance tuning (#2312)
-- Re-enable caching when listing apps.  (#2295)
-- Fixes bug in `argocd repo list` and tidy up UI (#2307)
-- Add restart action to Deployment/StatefulSet/DaemonSet (#2300)
-- Clean-up the kube-version from Helm so that we can support GKE.  (#2304)
-- Fixes issue diffing secrets (#2271)
-- Add --self-heal flag to argocd cli (#2296)
-- Support --kube-version.  (#2276)
-- Fix building error when following CONTRIBUTING.md (#2278)
-- Adding information to make local execution more accessible (#2279)
-- API clients may use the HTTP Authorization header for auth.  (#2262)
-- Fix TestAutoSyncSelfHealEnabled test flakiness (#2282)
-- Change Helm repo URLs to argoproj/argo-cd/master (#2266)
-- Fix/grafana datasources (#2229)
-- If there is only one wave and no pre/post hooks, we should be synced.… (#2217)
-- Create projects from manifests (#2202)
-- Fix JS crash in EditablePanel component (#2222)
-- Use same /24 network for testing immutable field update (#2213)
-- Add path to externalURLs (#2208)
-- support OIDC claims request (#1957)
-- Better detection for authorization_code OIDC response type (#2164)
-- Allow list actions to return yaml or json (#1805)
-- Adds a floating action button with help and chat links to every page.… (#2125)
-- Temporary disable Git LFS test to unblock release (#2172)
-- Determine the manifest version from the VERSION file when on release branch (#2166)
-- Enhances cookie warning with actual length to help users fix their co… (#2134)
-- Fixed routing issue for periods (#2162)
-- Added more health filters in UI (#2160)
-- Added 'SyncFail' to possible HookTypes in UI (#2153)
-- Indicate that `SyncFail` hooks are on v1.2+ (#2149)
-- Adds checks around valid paths for apps (#2133)
-- Minor CLI bug fixes (#2132)
-- Adds support for a literal YAML block of Helm values. Closes #1930  (#2057)
-- Fixed truncation of group in UI. Closes #2006 (#2128)
-- Redact secrets using "+" rather than "*" as this is base 64 compatiba… (#2119)
-
-#### Contributors
-
-* Aalok Ahluwalia <!-- num=1 -->
-* Adam Johnson <!-- num=4 -->
-* Alex Collins <!-- num=62 -->
-* Alexander Matyushentsev <!-- num=58 -->
-* Andrew Waters <!-- num=2 -->
-* Ben Doyle <!-- num=1 -->
-* Chris Jones <!-- num=1 -->
-* Fred Dubois <!-- num=1 -->
-* Gregor Krmelj <!-- num=2 -->
-* Gustav Paul <!-- num=2 -->
-* Isaac Gaskin <!-- num=1 -->
-* Jesse Suen <!-- num=1 -->
-* John Reese <!-- num=1 -->
-* Mitz Amano <!-- num=1 -->
-* Olivier Boukili <!-- num=1 -->
-* Olivier Lemasle <!-- num=1 -->
-* Rayyis <!-- num=1 -->
-* Rodolphe Prin <!-- num=1 -->
-* Ryota <!-- num=2 -->
-* Seiya Muramatsu <!-- num=1 -->
-* Simon Behar <!-- num=11 -->
-* Sverre Boschman <!-- num=1 -->
-* Tom Wieczorek <!-- num=3 -->
-* Yujun Zhang <!-- num=4 -->
-* Zoltán Reegn <!-- num=1 -->
-* agabet <!-- num=1 -->
-* dthomson25 <!-- num=2 -->
-* jannfis <!-- num=8 -->
-* ssbtn <!-- num=2 -->
+- Issue #2339 - Don't update `status.reconciledAt` unless compared with latest git version (#2581)
 
 ## v1.2.4 (2019-10-23)
 
@@ -223,7 +746,7 @@ Support for Git LFS enabled repositories - now you can store Helm charts as tar 
 + Added 'SyncFail' to possible HookTypes in UI (#2147)
 + Support for Git LFS enabled repositories (#1853)
 + Server certificate and known hosts management (#1514)
-+ Client HTTPS certifcates for private git repositories (#1945)
++ Client HTTPS certificates for private git repositories (#1945)
 + Badge for application status (#1435)
 + Make the health check for APIService a built in (#1841)
 + Bitbucket Server and Gogs webhook providers (#1269)
@@ -263,7 +786,7 @@ Support for Git LFS enabled repositories - now you can store Helm charts as tar 
 - Fix history api fallback implementation to support app names with dots (#2114)
 - Fixes some code issues related to Kustomize build options. (#2146)
 - Adds checks around valid paths for apps (#2133)
-- Enpoint incorrectly considered top level managed resource (#2060)
+- Endpoint incorrectly considered top level managed resource (#2060)
 - Allow adding certs for hostnames ending on a dot (#2116)
 
 #### Other
@@ -586,7 +1109,7 @@ Argo CD introduces some additional CLI commands:
 #### Label selector changes, dex-server rename
 
 The label selectors for deployments were been renamed to use kubernetes common labels
-(`app.kuberentes.io/name=NAME` instead of `app=NAME`). Since K8s deployment label selectors are
+(`app.kubernetes.io/name=NAME` instead of `app=NAME`). Since K8s deployment label selectors are
 immutable, during an upgrade from v0.11 to v0.12, the old deployments should be deleted using
 `--cascade=false` which allows the new deployments to be created without introducing downtime.
 Once the new deployments are ready, the older replicasets can be deleted. Use the following
@@ -683,7 +1206,7 @@ has a minimum client version of v0.12.0. Older CLI clients will be rejected.
 - Fix CRD creation/deletion handling (#1249)
 - Git cloning via SSH was not verifying host public key (#1276)
 - Fixed multiple goroutine leaks in controller and api-server
-- Fix isssue where `argocd app set -p` required repo privileges. (#1280)
+- Fix issue where `argocd app set -p` required repo privileges. (#1280)
 - Fix local diff of non-namespaced resources. Also handle duplicates in local diff (#1289)
 - Deprecated resource kinds from 'extensions' groups are not reconciled correctly (#1232)
 - Fix issue where CLI would panic after timeout when cli did not have get permissions (#1209)
@@ -861,7 +1384,7 @@ which have a dependency to external helm repositories.
 
 + Allow more fine-grained sync (issue #508)
 + Display init container logs (issue #681)
-+ Redirect to /auth/login instead of /login when SSO token is used for authenticaion (issue #348)
++ Redirect to /auth/login instead of /login when SSO token is used for authentication (issue #348)
 + Support ability to use a helm values files from a URL (issue #624)
 + Support public not-connected repo in app creation UI (issue #426)
 + Use ksonnet CLI instead of ksonnet libs (issue #626)
@@ -1136,7 +1659,7 @@ RBAC policy rules, need to be rewritten to include one extra column with the eff
 + Sync/Rollback/Delete is asynchronously handled by controller
 * Refactor CRUD operation on clusters and repos
 * Sync will always perform kubectl apply
-* Synced Status considers last-applied-configuration annotatoin
+* Synced Status considers last-applied-configuration annotation
 * Server & namespace are mandatory fields (still inferred from app.yaml)
 * Manifests are memoized in repo server
 - Fix connection timeouts to SSH repos

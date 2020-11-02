@@ -1,11 +1,11 @@
 package helm
 
 import (
+	"fmt"
 	"os"
-	"regexp"
 	"testing"
 
-	"github.com/argoproj/argo-cd/util/kube"
+	"github.com/argoproj/gitops-engine/pkg/utils/kube"
 
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -19,11 +19,11 @@ func template(h Helm, opts *TemplateOpts) ([]*unstructured.Unstructured, error) 
 	if err != nil {
 		return nil, err
 	}
-	return kube.SplitYAML(out)
+	return kube.SplitYAML([]byte(out))
 }
 
 func TestHelmTemplateParams(t *testing.T) {
-	h, err := NewHelmApp("./testdata/minio", []HelmRepository{})
+	h, err := NewHelmApp("./testdata/minio", []HelmRepository{}, false, "")
 	assert.NoError(t, err)
 	opts := TemplateOpts{
 		Name: "test",
@@ -52,7 +52,7 @@ func TestHelmTemplateParams(t *testing.T) {
 }
 
 func TestHelmTemplateValues(t *testing.T) {
-	h, err := NewHelmApp("./testdata/redis", []HelmRepository{})
+	h, err := NewHelmApp("./testdata/redis", []HelmRepository{}, false, "")
 	assert.NoError(t, err)
 	opts := TemplateOpts{
 		Name:   "test",
@@ -73,7 +73,7 @@ func TestHelmTemplateValues(t *testing.T) {
 }
 
 func TestHelmGetParams(t *testing.T) {
-	h, err := NewHelmApp("./testdata/redis", nil)
+	h, err := NewHelmApp("./testdata/redis", nil, false, "")
 	assert.NoError(t, err)
 	params, err := h.GetParameters([]string{})
 	assert.Nil(t, err)
@@ -83,7 +83,7 @@ func TestHelmGetParams(t *testing.T) {
 }
 
 func TestHelmGetParamsValueFiles(t *testing.T) {
-	h, err := NewHelmApp("./testdata/redis", nil)
+	h, err := NewHelmApp("./testdata/redis", nil, false, "")
 	assert.NoError(t, err)
 	params, err := h.GetParameters([]string{"values-production.yaml"})
 	assert.Nil(t, err)
@@ -93,25 +93,32 @@ func TestHelmGetParamsValueFiles(t *testing.T) {
 }
 
 func TestHelmDependencyBuild(t *testing.T) {
-	clean := func() {
-		_ = os.RemoveAll("./testdata/wordpress/charts")
+	testCases := map[string]string{"Helm": "dependency", "Helm2": "helm2-dependency"}
+	for name := range testCases {
+		t.Run(name, func(t *testing.T) {
+			chart := testCases[name]
+			clean := func() {
+				_ = os.RemoveAll(fmt.Sprintf("./testdata/%s/charts", chart))
+				_ = os.RemoveAll(fmt.Sprintf("./testdata/%s/Chart.lock", chart))
+			}
+			clean()
+			defer clean()
+			h, err := NewHelmApp(fmt.Sprintf("./testdata/%s", chart), nil, false, "")
+			assert.NoError(t, err)
+			err = h.Init()
+			assert.NoError(t, err)
+			_, err = h.Template(&TemplateOpts{Name: "wordpress"})
+			assert.Error(t, err)
+			err = h.DependencyBuild()
+			assert.NoError(t, err)
+			_, err = h.Template(&TemplateOpts{Name: "wordpress"})
+			assert.NoError(t, err)
+		})
 	}
-	clean()
-	defer clean()
-	h, err := NewHelmApp("./testdata/wordpress", nil)
-	assert.NoError(t, err)
-	err = h.Init()
-	assert.NoError(t, err)
-	_, err = h.Template(&TemplateOpts{Name: "wordpress"})
-	assert.Error(t, err)
-	err = h.DependencyBuild()
-	assert.NoError(t, err)
-	_, err = h.Template(&TemplateOpts{Name: "wordpress"})
-	assert.NoError(t, err)
 }
 
 func TestHelmTemplateReleaseNameOverwrite(t *testing.T) {
-	h, err := NewHelmApp("./testdata/redis", nil)
+	h, err := NewHelmApp("./testdata/redis", nil, false, "")
 	assert.NoError(t, err)
 
 	objs, err := template(h, &TemplateOpts{Name: "my-release"})
@@ -129,7 +136,7 @@ func TestHelmTemplateReleaseNameOverwrite(t *testing.T) {
 }
 
 func TestHelmTemplateReleaseName(t *testing.T) {
-	h, err := NewHelmApp("./testdata/redis", nil)
+	h, err := NewHelmApp("./testdata/redis", nil, false, "")
 	assert.NoError(t, err)
 	objs, err := template(h, &TemplateOpts{Name: "test"})
 	assert.Nil(t, err)
@@ -158,11 +165,9 @@ func TestHelmArgCleaner(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	ver, err := Version()
+	ver, err := Version(false)
 	assert.NoError(t, err)
-	SemverRegexValidation := `^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(\+[0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*)?$`
-	re := regexp.MustCompile(SemverRegexValidation)
-	assert.True(t, re.MatchString(ver))
+	assert.NotEmpty(t, ver)
 }
 
 func Test_flatVals(t *testing.T) {
@@ -187,4 +192,23 @@ func Test_flatVals(t *testing.T) {
 
 		assert.Equal(t, map[string]string{"foo": "1"}, output)
 	})
+}
+
+func TestAPIVersions(t *testing.T) {
+	h, err := NewHelmApp("./testdata/api-versions", nil, false, "")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	objs, err := template(h, &TemplateOpts{})
+	if !assert.NoError(t, err) || !assert.Len(t, objs, 1) {
+		return
+	}
+	assert.Equal(t, objs[0].GetAPIVersion(), "sample/v1")
+
+	objs, err = template(h, &TemplateOpts{APIVersions: []string{"sample/v2"}})
+	if !assert.NoError(t, err) || !assert.Len(t, objs, 1) {
+		return
+	}
+	assert.Equal(t, objs[0].GetAPIVersion(), "sample/v2")
 }

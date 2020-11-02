@@ -1,4 +1,4 @@
-@import 'node_modules/argo-ui/src/app/shared/styles/config';
+@import 'node_modules/argo-ui/src/styles/config';
 
 .application-create-panel {
 
@@ -10,6 +10,10 @@
 
     &__sync-params {
         padding-top: 5px;
+    }
+
+    .checkbox-container {
+        margin: 0.5em ;
     }
 
     pre {

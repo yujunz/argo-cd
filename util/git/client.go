@@ -47,6 +47,7 @@ type Client interface {
 	LsLargeFiles() ([]string, error)
 	CommitSHA() (string, error)
 	RevisionMetadata(revision string) (*RevisionMetadata, error)
+	VerifyCommitSignature(string) (string, error)
 }
 
 // nativeGitClient implements Client interface using git CLI
@@ -79,6 +80,9 @@ func init() {
 
 func NewClient(rawRepoURL string, creds Creds, insecure bool, enableLfs bool) (Client, error) {
 	root := filepath.Join(os.TempDir(), strings.Replace(NormalizeGitURL(rawRepoURL), "/", "_", -1))
+	if root == os.TempDir() {
+		return nil, fmt.Errorf("Repository '%s' cannot be initialized, because its root would be system temp at %s", rawRepoURL, root)
+	}
 	return NewClientExt(rawRepoURL, root, creds, insecure, enableLfs)
 }
 
@@ -144,6 +148,7 @@ func GetRepoHTTPClient(repoURL string, insecure bool, creds Creds) *http.Client 
 				InsecureSkipVerify:   true,
 				GetClientCertificate: clientCertFunc,
 			},
+			DisableKeepAlives: true,
 		}
 	} else {
 		parsedURL, err := url.Parse(repoURL)
@@ -161,6 +166,7 @@ func GetRepoHTTPClient(repoURL string, insecure bool, creds Creds) *http.Client 
 					RootCAs:              certPool,
 					GetClientCertificate: clientCertFunc,
 				},
+				DisableKeepAlives: true,
 			}
 		} else {
 			// else no custom certificate stored.
@@ -169,6 +175,7 @@ func GetRepoHTTPClient(repoURL string, insecure bool, creds Creds) *http.Client 
 				TLSClientConfig: &tls.Config{
 					GetClientCertificate: clientCertFunc,
 				},
+				DisableKeepAlives: true,
 			}
 		}
 	}
@@ -431,6 +438,22 @@ func (m *nativeGitClient) RevisionMetadata(revision string) (*RevisionMetadata, 
 	tags := strings.Fields(out)
 
 	return &RevisionMetadata{author, time.Unix(authorDateUnixTimestamp, 0), tags, message}, nil
+}
+
+// VerifyCommitSignature Runs verify-commit on a given revision and returns the output
+func (m *nativeGitClient) VerifyCommitSignature(revision string) (string, error) {
+	out, err := m.runGnuPGWrapper("git-verify-wrapper.sh", revision)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// runWrapper runs a custom command with all the semantics of running the Git client
+func (m *nativeGitClient) runGnuPGWrapper(wrapper string, args ...string) (string, error) {
+	cmd := exec.Command(wrapper, args...)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GNUPGHOME=%s", common.GetGnuPGHomePath()))
+	return m.runCmdOutput(cmd)
 }
 
 // runCmd is a convenience function to run a command in a given directory and return its output

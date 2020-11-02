@@ -1,4 +1,4 @@
-@import 'node_modules/argo-ui/src/app/shared/styles/config';
+@import 'node_modules/argo-ui/src/styles/config';
 
 $logoPath: 'assets/images/argologo.svg';
 $logoNegativePath: 'assets/images/argo.png';
@@ -47,7 +47,7 @@ $logoNegativePath: 'assets/images/argo.png';
         padding: 20px 0 80px;
     }
 
-    &__box-outter {
+    &__box-outer {
         display: table-cell;
         vertical-align: middle;
         overflow: hidden;

@@ -30,6 +30,7 @@ import (
 	applicationpkg "github.com/argoproj/argo-cd/pkg/apiclient/application"
 	certificatepkg "github.com/argoproj/argo-cd/pkg/apiclient/certificate"
 	clusterpkg "github.com/argoproj/argo-cd/pkg/apiclient/cluster"
+	gpgkeypkg "github.com/argoproj/argo-cd/pkg/apiclient/gpgkey"
 	projectpkg "github.com/argoproj/argo-cd/pkg/apiclient/project"
 	repocredspkg "github.com/argoproj/argo-cd/pkg/apiclient/repocreds"
 	repositorypkg "github.com/argoproj/argo-cd/pkg/apiclient/repository"
@@ -38,8 +39,9 @@ import (
 	versionpkg "github.com/argoproj/argo-cd/pkg/apiclient/version"
 	"github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
 	argoappv1 "github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
-	"github.com/argoproj/argo-cd/util"
 	grpc_util "github.com/argoproj/argo-cd/util/grpc"
+	argoio "github.com/argoproj/argo-cd/util/io"
+	"github.com/argoproj/argo-cd/util/kube"
 	"github.com/argoproj/argo-cd/util/localconfig"
 	oidcutil "github.com/argoproj/argo-cd/util/oidc"
 	tls_util "github.com/argoproj/argo-cd/util/tls"
@@ -68,6 +70,8 @@ type Client interface {
 	NewCertClientOrDie() (io.Closer, certificatepkg.CertificateServiceClient)
 	NewClusterClient() (io.Closer, clusterpkg.ClusterServiceClient, error)
 	NewClusterClientOrDie() (io.Closer, clusterpkg.ClusterServiceClient)
+	NewGPGKeyClient() (io.Closer, gpgkeypkg.GPGKeyServiceClient, error)
+	NewGPGKeyClientOrDie() (io.Closer, gpgkeypkg.GPGKeyServiceClient)
 	NewApplicationClient() (io.Closer, applicationpkg.ApplicationServiceClient, error)
 	NewApplicationClientOrDie() (io.Closer, applicationpkg.ApplicationServiceClient)
 	NewSessionClient() (io.Closer, sessionpkg.SessionServiceClient, error)
@@ -80,33 +84,40 @@ type Client interface {
 	NewProjectClientOrDie() (io.Closer, projectpkg.ProjectServiceClient)
 	NewAccountClient() (io.Closer, accountpkg.AccountServiceClient, error)
 	NewAccountClientOrDie() (io.Closer, accountpkg.AccountServiceClient)
-	WatchApplicationWithRetry(ctx context.Context, appName string) chan *argoappv1.ApplicationWatchEvent
+	WatchApplicationWithRetry(ctx context.Context, appName string, revision string) chan *argoappv1.ApplicationWatchEvent
 }
 
 // ClientOptions hold address, security, and other settings for the API client.
 type ClientOptions struct {
-	ServerAddr string
-	PlainText  bool
-	Insecure   bool
-	CertFile   string
-	AuthToken  string
-	ConfigPath string
-	Context    string
-	UserAgent  string
-	GRPCWeb    bool
-	Headers    []string
+	ServerAddr           string
+	PlainText            bool
+	Insecure             bool
+	CertFile             string
+	ClientCertFile       string
+	ClientCertKeyFile    string
+	AuthToken            string
+	ConfigPath           string
+	Context              string
+	UserAgent            string
+	GRPCWeb              bool
+	GRPCWebRootPath      string
+	PortForward          bool
+	PortForwardNamespace string
+	Headers              []string
 }
 
 type client struct {
-	ServerAddr   string
-	PlainText    bool
-	Insecure     bool
-	CertPEMData  []byte
-	AuthToken    string
-	RefreshToken string
-	UserAgent    string
-	GRPCWeb      bool
-	Headers      []string
+	ServerAddr      string
+	PlainText       bool
+	Insecure        bool
+	CertPEMData     []byte
+	ClientCert      *tls.Certificate
+	AuthToken       string
+	RefreshToken    string
+	UserAgent       string
+	GRPCWeb         bool
+	GRPCWebRootPath string
+	Headers         []string
 
 	proxyMutex      *sync.Mutex
 	proxyListener   net.Listener
@@ -136,9 +147,27 @@ func NewClient(opts *ClientOptions) (Client, error) {
 					return nil, err
 				}
 			}
+			if configCtx.Server.ClientCertificateData != "" && configCtx.Server.ClientCertificateKeyData != "" {
+				clientCertData, err := base64.StdEncoding.DecodeString(configCtx.Server.ClientCertificateData)
+				if err != nil {
+					return nil, err
+				}
+				clientCertKeyData, err := base64.StdEncoding.DecodeString(configCtx.Server.ClientCertificateKeyData)
+				if err != nil {
+					return nil, err
+				}
+				clientCert, err := tls.X509KeyPair(clientCertData, clientCertKeyData)
+				if err != nil {
+					return nil, err
+				}
+				c.ClientCert = &clientCert
+			} else if configCtx.Server.ClientCertificateData != "" || configCtx.Server.ClientCertificateKeyData != "" {
+				return nil, errors.New("ClientCertificateData and ClientCertificateKeyData must always be specified together")
+			}
 			c.PlainText = configCtx.Server.PlainText
 			c.Insecure = configCtx.Server.Insecure
 			c.GRPCWeb = configCtx.Server.GRPCWeb
+			c.GRPCWebRootPath = configCtx.Server.GRPCWebRootPath
 			c.AuthToken = configCtx.User.AuthToken
 			c.RefreshToken = configCtx.User.RefreshToken
 			ctxName = configCtx.Name
@@ -152,6 +181,14 @@ func NewClient(opts *ClientOptions) (Client, error) {
 	// Override server address if specified in env or CLI flag
 	if serverFromEnv := os.Getenv(EnvArgoCDServer); serverFromEnv != "" {
 		c.ServerAddr = serverFromEnv
+	}
+	if opts.PortForward || opts.PortForwardNamespace != "" {
+		port, err := kube.PortForward("app.kubernetes.io/name=argocd-server", 8080, opts.PortForwardNamespace)
+		if err != nil {
+			return nil, err
+		}
+		opts.ServerAddr = fmt.Sprintf("127.0.0.1:%d", port)
+		opts.Insecure = true
 	}
 	if opts.ServerAddr != "" {
 		c.ServerAddr = opts.ServerAddr
@@ -179,6 +216,16 @@ func NewClient(opts *ClientOptions) (Client, error) {
 		}
 		c.CertPEMData = b
 	}
+	// Override client certificate data if specified from CLI flag
+	if opts.ClientCertFile != "" && opts.ClientCertKeyFile != "" {
+		clientCert, err := tls.LoadX509KeyPair(opts.ClientCertFile, opts.ClientCertKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		c.ClientCert = &clientCert
+	} else if opts.ClientCertFile != "" || opts.ClientCertKeyFile != "" {
+		return nil, errors.New("--client-crt and --client-crt-key must always be specified together")
+	}
 	// Override insecure/plaintext options if specified from CLI
 	if opts.PlainText {
 		c.PlainText = true
@@ -188,6 +235,9 @@ func NewClient(opts *ClientOptions) (Client, error) {
 	}
 	if opts.GRPCWeb {
 		c.GRPCWeb = true
+	}
+	if opts.GRPCWebRootPath != "" {
+		c.GRPCWebRootPath = opts.GRPCWebRootPath
 	}
 	if localCfg != nil {
 		err = c.refreshAuthToken(localCfg, ctxName, opts.ConfigPath)
@@ -366,7 +416,7 @@ func (c *client) newConn() (*grpc.ClientConn, io.Closer, error) {
 	closers := make([]io.Closer, 0)
 	serverAddr := c.ServerAddr
 	network := "tcp"
-	if c.GRPCWeb {
+	if c.GRPCWeb || c.GRPCWebRootPath != "" {
 		// start local grpc server which proxies requests using grpc-web protocol
 		addr, closer, err := c.useGRPCProxy()
 		if err != nil {
@@ -378,7 +428,7 @@ func (c *client) newConn() (*grpc.ClientConn, io.Closer, error) {
 	}
 
 	var creds credentials.TransportCredentials
-	if !c.PlainText && !c.GRPCWeb {
+	if !c.PlainText && !c.GRPCWeb && c.GRPCWebRootPath == "" {
 		tlsConfig, err := c.tlsConfig()
 		if err != nil {
 			return nil, nil, err
@@ -390,7 +440,7 @@ func (c *client) newConn() (*grpc.ClientConn, io.Closer, error) {
 	}
 	var dialOpts []grpc.DialOption
 	dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(endpointCredentials))
-	dialOpts = append(dialOpts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxGRPCMessageSize)))
+	dialOpts = append(dialOpts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxGRPCMessageSize), grpc.MaxCallSendMsgSize(MaxGRPCMessageSize)))
 
 	ctx := context.Background()
 
@@ -406,7 +456,7 @@ func (c *client) newConn() (*grpc.ClientConn, io.Closer, error) {
 	}
 	conn, e := grpc_util.BlockingDial(ctx, network, serverAddr, creds, dialOpts...)
 	closers = append(closers, conn)
-	return conn, util.NewCloser(func() error {
+	return conn, argoio.NewCloser(func() error {
 		var firstErr error
 		for i := range closers {
 			err := closers[i].Close()
@@ -426,6 +476,9 @@ func (c *client) tlsConfig() (*tls.Config, error) {
 			return nil, fmt.Errorf("credentials: failed to append certificates")
 		}
 		tlsConfig.RootCAs = cp
+	}
+	if c.ClientCert != nil {
+		tlsConfig.Certificates = append(tlsConfig.Certificates, *c.ClientCert)
 	}
 	if c.Insecure {
 		tlsConfig.InsecureSkipVerify = true
@@ -508,6 +561,23 @@ func (c *client) NewClusterClientOrDie() (io.Closer, clusterpkg.ClusterServiceCl
 		log.Fatalf("Failed to establish connection to %s: %v", c.ServerAddr, err)
 	}
 	return conn, clusterIf
+}
+
+func (c *client) NewGPGKeyClient() (io.Closer, gpgkeypkg.GPGKeyServiceClient, error) {
+	conn, closer, err := c.newConn()
+	if err != nil {
+		return nil, nil, err
+	}
+	gpgkeyIf := gpgkeypkg.NewGPGKeyServiceClient(conn)
+	return closer, gpgkeyIf, nil
+}
+
+func (c *client) NewGPGKeyClientOrDie() (io.Closer, gpgkeypkg.GPGKeyServiceClient) {
+	conn, gpgkeyIf, err := c.NewGPGKeyClient()
+	if err != nil {
+		log.Fatalf("Failed to establish connection to %s: %v", c.ServerAddr, err)
+	}
+	return conn, gpgkeyIf
 }
 
 func (c *client) NewApplicationClient() (io.Closer, applicationpkg.ApplicationServiceClient, error) {
@@ -614,7 +684,7 @@ func (c *client) NewAccountClientOrDie() (io.Closer, accountpkg.AccountServiceCl
 
 // WatchApplicationWithRetry returns a channel of watch events for an application, retrying the
 // watch upon errors. Closes the returned channel when the context is cancelled.
-func (c *client) WatchApplicationWithRetry(ctx context.Context, appName string) chan *argoappv1.ApplicationWatchEvent {
+func (c *client) WatchApplicationWithRetry(ctx context.Context, appName string, revision string) chan *argoappv1.ApplicationWatchEvent {
 	appEventsCh := make(chan *argoappv1.ApplicationWatchEvent)
 	cancelled := false
 	go func() {
@@ -623,7 +693,7 @@ func (c *client) WatchApplicationWithRetry(ctx context.Context, appName string) 
 			conn, appIf, err := c.NewApplicationClient()
 			if err == nil {
 				var wc applicationpkg.ApplicationService_WatchClient
-				wc, err = appIf.Watch(ctx, &applicationpkg.ApplicationQuery{Name: &appName})
+				wc, err = appIf.Watch(ctx, &applicationpkg.ApplicationQuery{Name: &appName, ResourceVersion: revision})
 				if err == nil {
 					for {
 						var appEvent *v1alpha1.ApplicationWatchEvent
@@ -631,6 +701,7 @@ func (c *client) WatchApplicationWithRetry(ctx context.Context, appName string) 
 						if err != nil {
 							break
 						}
+						revision = appEvent.Application.ResourceVersion
 						appEventsCh <- appEvent
 					}
 				}
@@ -639,9 +710,6 @@ func (c *client) WatchApplicationWithRetry(ctx context.Context, appName string) 
 				if isCanceledContextErr(err) {
 					cancelled = true
 				} else {
-					if err != io.EOF {
-						log.Warnf("watch err: %v", err)
-					}
 					time.Sleep(1 * time.Second)
 				}
 			}

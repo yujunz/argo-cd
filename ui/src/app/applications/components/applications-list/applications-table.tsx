@@ -52,14 +52,15 @@ export const ApplicationsTable = (props: {
                                 <div className='row'>
                                     <div className='show-for-xxlarge columns small-2'>Destination:</div>
                                     <div className='columns small-12 xxlarge-10'>
-                                        <Cluster server={app.spec.destination.server} />/{app.spec.destination.namespace}
+                                        <Cluster server={app.spec.destination.server} name={app.spec.destination.name} />/{app.spec.destination.namespace}
                                     </div>
                                 </div>
                             </div>
                             <div className='columns small-2'>
                                 <AppUtils.HealthStatusIcon state={app.status.health} /> <span>{app.status.health.status}</span>
                                 <br />
-                                <AppUtils.ComparisonStatusIcon status={app.status.sync.status} /> <span>{app.status.sync.status}</span> <OperationState app={app} />
+                                <AppUtils.ComparisonStatusIcon status={app.status.sync.status} />
+                                <span>{app.status.sync.status}</span> <OperationState app={app} quiet={true} />
                                 <DropDownMenu
                                     anchor={() => (
                                         <button className='argo-button argo-button--light argo-button--lg argo-button--short'>
