@@ -21,7 +21,7 @@ jobs:
     - name: Login Docker Hub
       env:
         DOCKERHUB_ACCESS_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
-      run: docker login --username yujunz --password ${DOCKERHUB_ACCESS_TOKEN}
+      run: echo ${DOCKERHUB_ACCESS_TOKEN} | docker login --username yujunz --password-stdin
 
     - name: Build
       env:
@@ -29,4 +29,3 @@ jobs:
         DOCKER_PUSH: true
         DOCKERFILE: custom
       run: make image
-
