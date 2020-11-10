@@ -38,5 +38,4 @@ RUN PLUGIN_GO_GETTER=plugin/someteam.example.com/v1/gogetter/GoGetter && \
 RUN helm2 init --client-only && \
   helm2 plugin install https://github.com/futuresimple/helm-secrets --version 2.0.2 && \
   helm2 plugin install https://github.com/hypnoglow/helm-s3.git --version 0.8.0 && \
-  # helm-tiller plugin requires pkill (installed in procps)
-  helm2 plugin install https://github.com/rimusz/helm-tiller --version 0.8.3
+  helm2 plugin install https://github.com/yujunz/helm-tiller
