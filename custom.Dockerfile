@@ -16,24 +16,15 @@ RUN apt-get update && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-ENV SOPS_VERSION=3.4.0
-RUN curl -o /usr/local/bin/sops -L https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux && \
+RUN SOPS_VERSION=3.4.0 curl -o /usr/local/bin/sops -L https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux && \
   chmod +x /usr/local/bin/sops
 
-ENV HELMFILE_VERSION=v0.90.8
-RUN curl -o /usr/local/bin/helmfile -L https://github.com/roboll/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_linux_amd64 && \
+RUN HELMFILE_VERSION=v0.134.1 curl -o /usr/local/bin/helmfile -L https://github.com/roboll/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_linux_amd64 && \
   chmod +x /usr/local/bin/helmfile
 
 USER argocd
 
 ENV XDG_CONFIG_HOME=/home/argocd/.config
-
-COPY --from=builder /go/bin/go-getter /usr/local/bin/
-
-RUN PLUGIN_GO_GETTER=plugin/someteam.example.com/v1/gogetter/GoGetter && \
-  curl --create-dirs --show-error --silent --location --output ${XDG_CONFIG_HOME}/kustomize/${PLUGIN_GO_GETTER} \
-  https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/${PLUGIN_GO_GETTER} && \
-  chmod +x ${XDG_CONFIG_HOME}/kustomize/${PLUGIN_GO_GETTER}
 
 RUN helm2 init --client-only && \
   helm2 plugin install https://github.com/futuresimple/helm-secrets --version 2.0.2 && \
