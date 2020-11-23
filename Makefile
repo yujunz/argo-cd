@@ -283,7 +283,6 @@ ifndef IMAGE_TAG
 IMAGE_TAG=custom-$(shell git describe --always --dirty)
 endif
 image:
-	docker pull argoproj/argocd
 	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f custom.Dockerfile custom
 endif
 	@if [ "$(DOCKER_PUSH)" = "true" ] ; then docker push $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) ; fi
