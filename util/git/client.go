@@ -297,12 +297,15 @@ func (m *nativeGitClient) LsLargeFiles() ([]string, error) {
 	return ss, nil
 }
 
-// Checkout checkout specified git sha
+// Checkout checkout specified revision
 func (m *nativeGitClient) Checkout(revision string) error {
-	if revision == "" || revision == "HEAD" {
-		revision = "origin/HEAD"
+	if revision == "" {
+		revision = "HEAD"
 	}
-	if _, err := m.runCmd("checkout", "--force", revision); err != nil {
+	if err := m.runCredentialedCmd("git", "fetch", "origin", revision); err != nil {
+		return err
+	}
+	if _, err := m.runCmd("checkout", "--force", "FETCH_HEAD"); err != nil {
 		return err
 	}
 	// We must populate LFS content by using lfs checkout, if we have at least
@@ -414,16 +417,12 @@ func (m *nativeGitClient) lsRemote(revision string) (string, error) {
 	refToResolve := ""
 	for _, ref := range refs {
 		refName := ref.Name().String()
-		if refName != "HEAD" && !strings.HasPrefix(refName, "refs/heads/") && !strings.HasPrefix(refName, "refs/tags/") {
-			// ignore things like 'refs/pull/' 'refs/reviewable'
-			continue
-		}
 		hash := ref.Hash().String()
 		if ref.Type() == plumbing.HashReference {
 			refToHash[refName] = hash
 		}
 		//log.Debugf("%s\t%s", hash, refName)
-		if ref.Name().Short() == revision {
+		if ref.Name().Short() == revision || refName == revision {
 			if ref.Type() == plumbing.HashReference {
 				log.Debugf("revision '%s' resolved to '%s'", revision, hash)
 				return hash, nil
@@ -506,6 +505,7 @@ func (m *nativeGitClient) runCmd(args ...string) (string, error) {
 }
 
 // runCredentialedCmd is a convenience function to run a git command with username/password credentials
+// nolint:unparam
 func (m *nativeGitClient) runCredentialedCmd(command string, args ...string) error {
 	cmd := exec.Command(command, args...)
 	closer, environ, err := m.creds.Environ()

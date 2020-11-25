@@ -138,7 +138,7 @@ func (s *Service) ListApps(ctx context.Context, q *apiclient.ListAppsRequest) (*
 	defer s.metricsServer.DecPendingRepoRequest(q.Repo.Repo)
 
 	closer, err := s.repoLock.Lock(gitClient.Root(), commitSHA, true, func() error {
-		return checkoutRevision(gitClient, commitSHA)
+		return checkoutRevision(gitClient, q.Revision)
 	})
 
 	if err != nil {
@@ -182,21 +182,22 @@ func (s *Service) runRepoOperation(
 	var helmClient helm.Client
 	var err error
 	var signature string
+	var resolvedRevision string
 	revision = textutils.FirstNonEmpty(revision, source.TargetRevision)
 	if source.IsHelm() {
-		helmClient, revision, err = s.newHelmClientResolveRevision(repo, revision, source.Chart)
+		helmClient, resolvedRevision, err = s.newHelmClientResolveRevision(repo, revision, source.Chart)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		gitClient, revision, err = s.newClientResolveRevision(repo, revision)
+		gitClient, resolvedRevision, err = s.newClientResolveRevision(repo, revision)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if !settings.noCache {
-		result, obj, err := getCached(revision, true)
+		result, obj, err := getCached(resolvedRevision, true)
 		if result {
 			return obj, err
 		}
@@ -214,7 +215,7 @@ func (s *Service) runRepoOperation(
 	}
 
 	if source.IsHelm() {
-		version, err := semver.NewVersion(revision)
+		version, err := semver.NewVersion(resolvedRevision)
 		if err != nil {
 			return nil, err
 		}
@@ -229,9 +230,9 @@ func (s *Service) runRepoOperation(
 			return nil, err
 		}
 		defer io.Close(closer)
-		return operation(chartPath, chartPath, revision, revision, "")
+		return operation(chartPath, chartPath, resolvedRevision, resolvedRevision, "")
 	} else {
-		closer, err := s.repoLock.Lock(gitClient.Root(), revision, settings.allowConcurrent, func() error {
+		closer, err := s.repoLock.Lock(gitClient.Root(), resolvedRevision, settings.allowConcurrent, func() error {
 			return checkoutRevision(gitClient, revision)
 		})
 
@@ -248,13 +249,13 @@ func (s *Service) runRepoOperation(
 
 		// double-check locking
 		if !settings.noCache {
-			result, obj, err := getCached(revision, false)
+			result, obj, err := getCached(resolvedRevision, false)
 			if result {
 				return obj, err
 			}
 		}
 		if verifyCommit {
-			signature, err = gitClient.VerifyCommitSignature(revision)
+			signature, err = gitClient.VerifyCommitSignature(resolvedRevision)
 			if err != nil {
 				return nil, err
 			}
@@ -265,7 +266,7 @@ func (s *Service) runRepoOperation(
 		}
 		// Here commitSHA refers to the SHA of the actual commit, whereas revision refers to the branch/tag name etc
 		// We use the commitSHA to generate manifests and store them in cache, and revision to retrieve them from cache
-		return operation(appPath, gitClient.Root(), commitSHA, revision, signature)
+		return operation(appPath, gitClient.Root(), commitSHA, resolvedRevision, signature)
 	}
 }
 
@@ -1275,10 +1276,6 @@ func checkoutRevision(gitClient git.Client, revision string) error {
 	err := gitClient.Init()
 	if err != nil {
 		return status.Errorf(codes.Internal, "Failed to initialize git repo: %v", err)
-	}
-	err = gitClient.Fetch()
-	if err != nil {
-		return status.Errorf(codes.Internal, "Failed to fetch git repo: %v", err)
 	}
 	err = gitClient.Checkout(revision)
 	if err != nil {
