@@ -27,5 +27,4 @@ jobs:
       env:
         IMAGE_NAMESPACE: yujunz
         DOCKER_PUSH: true
-        DOCKERFILE: custom
       run: make image

@@ -97,7 +97,7 @@ define run-in-test-client
 		bash -c "$(1)"
 endef
 
-#
+# 
 define exec-in-test-server
 	docker exec -it -u $(shell id -u):$(shell id -g) -e ARGOCD_E2E_K3S=$(ARGOCD_E2E_K3S) argocd-test-server $(1)
 endef
@@ -110,7 +110,6 @@ IMAGE_NAMESPACE?=
 # perform static compilation
 STATIC_BUILD?=true
 # build development images
-DOCKERFILE?=custom
 DEV_IMAGE?=false
 ARGOCD_GPG_ENABLED?=true
 ARGOCD_E2E_APISERVER_PORT?=8080
@@ -178,7 +177,7 @@ clientgen: ensure-gopath
 
 .PHONY: clidocsgen
 clidocsgen: ensure-gopath
-	go run tools/cmd-docs/main.go
+	go run tools/cmd-docs/main.go	
 
 .PHONY: codegen-local
 codegen-local: ensure-gopath mod-vendor-local gogen protogen clientgen openapigen clidocsgen manifests-local
@@ -251,39 +250,26 @@ packr:
 	go build -o ${DIST_DIR}/packr github.com/gobuffalo/packr/packr/
 
 .PHONY: image
-ifndef DOCKERFILE
-image:
-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) .
-endif
-ifeq (${DOCKERFILE}, dev)
+ifeq ($(DEV_IMAGE), true)
 # The "dev" image builds the binaries from the users desktop environment (instead of in Docker)
 # which speeds up builds. Dockerfile.dev needs to be copied into dist to perform the build, since
 # the dist directory is under .dockerignore.
-ifndef IMAGE_TAG
-IMAGE_TAG=dev-$(shell git describe --always --dirty)
-endif
-ifndef DEV_DOCKERFILE
-DEV_DOCKERFILE=Dockerfile.dev
-endif
+IMAGE_TAG="dev-$(shell git describe --always --dirty)"
 image: packr
 	docker build -t argocd-base --target argocd-base .
 	docker build -t argocd-ui --target argocd-ui .
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-server ./cmd/argocd-server
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-application-controller ./cmd/argocd-application-controller
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-repo-server ./cmd/argocd-repo-server
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-util ./cmd/argocd-util
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd ./cmd/argocd
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 ${PACKR_CMD} build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-darwin-amd64 ./cmd/argocd
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-server ./cmd/argocd-server
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-application-controller ./cmd/argocd-application-controller
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-repo-server ./cmd/argocd-repo-server
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-util ./cmd/argocd-util
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd ./cmd/argocd
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-darwin-amd64 ./cmd/argocd
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 dist/packr build -v -i -ldflags '${LDFLAGS}' -o ${DIST_DIR}/argocd-windows-amd64.exe ./cmd/argocd
-	cp ${DEV_DOCKERFILE} dist/Dockerfile
-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) dist
-endif
-ifeq (${DOCKERFILE}, custom)
-ifndef IMAGE_TAG
-IMAGE_TAG=custom-$(shell git describe --always --dirty)
-endif
+	cp Dockerfile.dev dist
+	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f dist/Dockerfile.dev dist
+else
 image:
-	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) -f custom.Dockerfile custom
+	docker build -t $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) .
 endif
 	@if [ "$(DOCKER_PUSH)" = "true" ] ; then docker push $(IMAGE_PREFIX)argocd:$(IMAGE_TAG) ; fi
 

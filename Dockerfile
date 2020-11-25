@@ -63,6 +63,11 @@ COPY --from=builder /usr/local/bin/helm2 /usr/local/bin/helm2
 COPY --from=builder /usr/local/bin/helm /usr/local/bin/helm
 COPY --from=builder /usr/local/bin/kubectl /usr/local/bin/kubectl
 COPY --from=builder /usr/local/bin/kustomize /usr/local/bin/kustomize
+
+# Install custom tools
+COPY hack/custom /opt/custom
+RUN /opt/custom/install.sh
+
 # script to add current (possibly arbitrary) user to /etc/passwd at runtime
 # (if it's not already there, to be openshift friendly)
 COPY uid_entrypoint.sh /usr/local/bin/uid_entrypoint.sh
@@ -70,7 +75,7 @@ COPY uid_entrypoint.sh /usr/local/bin/uid_entrypoint.sh
 # support for mounting configuration from a configmap
 RUN mkdir -p /app/config/ssh && \
     touch /app/config/ssh/ssh_known_hosts && \
-    ln -s /app/config/ssh/ssh_known_hosts /etc/ssh/ssh_known_hosts 
+    ln -s /app/config/ssh/ssh_known_hosts /etc/ssh/ssh_known_hosts
 
 RUN mkdir -p /app/config/tls
 RUN mkdir -p /app/config/gpg/source && \
@@ -78,11 +83,13 @@ RUN mkdir -p /app/config/gpg/source && \
     chown argocd /app/config/gpg/keys && \
     chmod 0700 /app/config/gpg/keys
 
+
 # workaround ksonnet issue https://github.com/ksonnet/ksonnet/issues/298
 ENV USER=argocd
 
 USER 999
 WORKDIR /home/argocd
+RUN /opt/custom/user-init.sh
 
 ####################################################################################################
 # Argo CD UI stage
