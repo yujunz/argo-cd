@@ -40,29 +40,6 @@ Check live demo at https://cd.apps.argoproj.io/.
 1. [Machine Learning as Code](https://www.youtube.com/watch?v=VXrGp5er1ZE&t=0s&index=135&list=PLj6h78yzYM2PZf9eA7bhWnIh_mK1vyOfU). Among other things, describes how Kubeflow uses Argo CD to implement GitOPs for ML
 1. [Argo CD - GitOps Continuous Delivery for Kubernetes](https://www.youtube.com/watch?v=aWDIQMbp1cc&feature=youtu.be&t=1m4s)
 1. [Introduction to Argo CD : Kubernetes DevOps CI/CD](https://www.youtube.com/watch?v=2WSJF7d8dUg&feature=youtu.be)
-
-## Custom tools in argocd image
-
-* kustomize plugins
-  * go-getter
-* helmfile
-* helm plugins
-  * helm-secret
-  * helm-s3
-  * helm-tiller
-
-```sh
-export GO111MODULE=off
-export IMAGE_NAMESPACE=yujunz
-export DOCKER_PUSH=true
-export DOCKERFILE=custom
-
-make dep
-make
-```
-
-## Develop
-
 1. [GitOps Deployment and Kubernetes - using ArgoCD](https://medium.com/riskified-technology/gitops-deployment-and-kubernetes-f1ab289efa4b)
 1. [Deploy Argo CD with Ingress and TLS in Three Steps: No YAML Yak Shaving Required](https://itnext.io/deploy-argo-cd-with-ingress-and-tls-in-three-steps-no-yaml-yak-shaving-required-bc536d401491)
 1. [GitOps Continuous Delivery with Argo and Codefresh](https://codefresh.io/events/cncf-member-webinar-gitops-continuous-delivery-argo-codefresh/)
