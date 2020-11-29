@@ -83,12 +83,14 @@ RUN mkdir -p /app/config/gpg/source && \
     chown argocd /app/config/gpg/keys && \
     chmod 0700 /app/config/gpg/keys
 
-
 # workaround ksonnet issue https://github.com/ksonnet/ksonnet/issues/298
 ENV USER=argocd
 
 USER 999
 WORKDIR /home/argocd
+
+# Init custom tools
+ENV XDG_CONFIG_HOME=/home/argocd/.config
 RUN /opt/custom/user-init.sh
 
 ####################################################################################################
