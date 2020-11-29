@@ -8,7 +8,7 @@ apt-get update && \
 
 export CURL_ARGS="-sSL --fail"
 
-export SOPS_VERSION=3.4.0
+export SOPS_VERSION=v3.6.1
 export HELMFILE_VERSION=v0.134.1
 
 curl ${CURL_ARGS} -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux
