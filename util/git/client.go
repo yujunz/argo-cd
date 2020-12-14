@@ -48,7 +48,7 @@ type Refs struct {
 type Client interface {
 	Root() string
 	Init() error
-	Fetch() error
+	Fetch(revision string) error
 	Checkout(revision string) error
 	LsRefs() (*Refs, error)
 	LsRemote(revision string) (string, error)
@@ -261,8 +261,13 @@ func (m *nativeGitClient) IsLFSEnabled() bool {
 }
 
 // Fetch fetches latest updates from origin
-func (m *nativeGitClient) Fetch() error {
-	err := m.runCredentialedCmd("git", "fetch", "origin", "--tags", "--force")
+func (m *nativeGitClient) Fetch(revision string) error {
+	var err error
+	if revision != "" {
+		err = m.runCredentialedCmd("git", "fetch", "origin", revision)
+	} else {
+		err = m.runCredentialedCmd("git", "fetch", "origin", "--tags", "--force")
+	}
 	// When we have LFS support enabled, check for large files and fetch them too.
 	if err == nil && m.IsLFSEnabled() {
 		largeFiles, err := m.LsLargeFiles()
@@ -299,13 +304,10 @@ func (m *nativeGitClient) LsLargeFiles() ([]string, error) {
 
 // Checkout checkout specified revision
 func (m *nativeGitClient) Checkout(revision string) error {
-	if revision == "" {
-		revision = "HEAD"
+	if revision == "" || revision == "HEAD" {
+		revision = "origin/HEAD"
 	}
-	if err := m.runCredentialedCmd("git", "fetch", "origin", revision); err != nil {
-		return err
-	}
-	if _, err := m.runCmd("checkout", "--force", "FETCH_HEAD"); err != nil {
+	if _, err := m.runCmd("checkout", "--force", revision); err != nil {
 		return err
 	}
 	// We must populate LFS content by using lfs checkout, if we have at least
