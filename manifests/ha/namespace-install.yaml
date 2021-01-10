@@ -134,6 +134,8 @@ spec:
                       properties:
                         exclude:
                           type: string
+                        include:
+                          type: string
                         jsonnet:
                           description: ApplicationSourceJsonnet holds jsonnet specific options
                           properties:
@@ -401,6 +403,8 @@ spec:
                   description: Directory holds path/directory specific options
                   properties:
                     exclude:
+                      type: string
+                    include:
                       type: string
                     jsonnet:
                       description: ApplicationSourceJsonnet holds jsonnet specific options
@@ -685,6 +689,8 @@ spec:
                         description: Directory holds path/directory specific options
                         properties:
                           exclude:
+                            type: string
+                          include:
                             type: string
                           jsonnet:
                             description: ApplicationSourceJsonnet holds jsonnet specific options
@@ -973,6 +979,8 @@ spec:
                               properties:
                                 exclude:
                                   type: string
+                                include:
+                                  type: string
                                 jsonnet:
                                   description: ApplicationSourceJsonnet holds jsonnet specific options
                                   properties:
@@ -1238,6 +1246,8 @@ spec:
                           properties:
                             exclude:
                               type: string
+                            include:
+                              type: string
                             jsonnet:
                               description: ApplicationSourceJsonnet holds jsonnet specific options
                               properties:
@@ -1499,6 +1509,8 @@ spec:
                           description: Directory holds path/directory specific options
                           properties:
                             exclude:
+                              type: string
+                            include:
                               type: string
                             jsonnet:
                               description: ApplicationSourceJsonnet holds jsonnet specific options
@@ -1976,25 +1988,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   labels:
-    app.kubernetes.io/component: redis
-    app.kubernetes.io/name: argocd-redis-haproxy
-    app.kubernetes.io/part-of: argocd
-  name: argocd-redis-haproxy
-  namespace: argocd
-rules:
-- apiGroups:
-  - security.openshift.io
-  resourceNames:
-  - nonroot
-  resources:
-  - securitycontextconstraints
-  verbs:
-  - use
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  labels:
     app.kubernetes.io/component: application-controller
     app.kubernetes.io/name: argocd-application-controller
     app.kubernetes.io/part-of: argocd
@@ -2077,6 +2070,24 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   labels:
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/name: argocd-redis-ha-haproxy
+    app.kubernetes.io/part-of: argocd
+  name: argocd-redis-ha-haproxy
+rules:
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - nonroot
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
     app.kubernetes.io/component: server
     app.kubernetes.io/name: argocd-server
     app.kubernetes.io/part-of: argocd
@@ -2115,23 +2126,6 @@ rules:
   verbs:
   - create
   - list
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  labels:
-    app.kubernetes.io/component: redis
-    app.kubernetes.io/name: argocd-redis-haproxy
-    app.kubernetes.io/part-of: argocd
-  name: argocd-redis-haproxy
-  namespace: argocd
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: argocd-redis-haproxy
-subjects:
-- kind: ServiceAccount
-  name: argocd-redis-haproxy
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2180,6 +2174,22 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: argocd-redis-ha
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/name: argocd-redis-ha-haproxy
+    app.kubernetes.io/part-of: argocd
+  name: argocd-redis-ha-haproxy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argocd-redis-ha-haproxy
+subjects:
+- kind: ServiceAccount
+  name: argocd-redis-ha-haproxy
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2919,15 +2929,23 @@ spec:
         - argocd-redis-ha-haproxy:6379
         image: argoproj/argocd:latest
         imagePullPolicy: Always
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz?full=true
+            port: 8084
+          initialDelaySeconds: 30
+          periodSeconds: 5
         name: argocd-repo-server
         ports:
         - containerPort: 8081
         - containerPort: 8084
         readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8084
           initialDelaySeconds: 5
           periodSeconds: 10
-          tcpSocket:
-            port: 8081
         volumeMounts:
         - mountPath: /app/config/ssh
           name: ssh-known-hosts

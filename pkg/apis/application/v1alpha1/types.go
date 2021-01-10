@@ -181,10 +181,7 @@ func (a *ApplicationSource) IsHelmOci() bool {
 	if a.Chart == "" {
 		return false
 	}
-	if _, _, ok := helm.IsHelmOci(a.Chart); ok {
-		return true
-	}
-	return false
+	return helm.IsHelmOciChart(a.Chart)
 }
 
 func (a *ApplicationSource) IsZero() bool {
@@ -439,6 +436,7 @@ type ApplicationSourceDirectory struct {
 	Recurse bool                     `json:"recurse,omitempty" protobuf:"bytes,1,opt,name=recurse"`
 	Jsonnet ApplicationSourceJsonnet `json:"jsonnet,omitempty" protobuf:"bytes,2,opt,name=jsonnet"`
 	Exclude string                   `json:"exclude,omitempty" protobuf:"bytes,3,opt,name=exclude"`
+	Include string                   `json:"include,omitempty" protobuf:"bytes,4,opt,name=include"`
 }
 
 func (d *ApplicationSourceDirectory) IsZero() bool {

@@ -9,7 +9,7 @@ import (
 	synccommon "github.com/argoproj/gitops-engine/pkg/sync/common"
 	"github.com/argoproj/gitops-engine/pkg/utils/kube/kubetest"
 	"github.com/argoproj/pkg/sync"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/dgrijalva/jwt-go/v4"
 	"github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 	k8scache "k8s.io/client-go/tools/cache"
@@ -161,6 +162,9 @@ func newTestAppServer(objects ...runtime.Object) *Server {
 		panic("Timed out waiting for caches to sync")
 	}
 
+	kfactory := informers.NewSharedInformerFactory(kubeclientset, 0)
+	nodeLister := kfactory.Core().V1().Nodes().Lister()
+
 	server := NewServer(
 		testNamespace,
 		kubeclientset,
@@ -175,6 +179,7 @@ func newTestAppServer(objects ...runtime.Object) *Server {
 		sync.NewKeyLock(),
 		settingsMgr,
 		projInformer,
+		nodeLister,
 	)
 	return server.(*Server)
 }

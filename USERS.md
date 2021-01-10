@@ -6,6 +6,7 @@ Currently, the following organizations are **officially** using Argo CD:
 
 1. [127Labs](https://127labs.com/)
 1. [3Rein](https://www.3rein.com/)
+1. [7shifts](https://www.7shifts.com/)
 1. [Adevinta](https://www.adevinta.com/)
 1. [ANSTO - Australian Synchrotron](https://www.synchrotron.org.au/)
 1. [AppDirect](https://www.appdirect.com)
@@ -42,6 +43,7 @@ Currently, the following organizations are **officially** using Argo CD:
 1. [Honestbank](https://honestbank.com)
 1. [InsideBoard](https://www.insideboard.com)
 1. [Intuit](https://www.intuit.com/)
+1. [JovianX](https://www.jovianx.com/)
 1. [Kasa](https://kasa.co.kr/)
 1. [Keptn](https://keptn.sh)
 1. [Kinguin](https://www.kinguin.net/)
@@ -88,6 +90,7 @@ Currently, the following organizations are **officially** using Argo CD:
 1. [Swissquote](https://github.com/swissquote)
 1. [Syncier](https://syncier.com/)
 1. [TableCheck](https://tablecheck.com/)
+1. [Tailor Brands](https://www.tailorbrands.com)
 1. [Tesla](https://tesla.com/)
 1. [ThousandEyes](https://www.thousandeyes.com/)
 1. [Ticketmaster](https://ticketmaster.com)
