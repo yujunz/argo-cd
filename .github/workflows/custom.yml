@@ -21,10 +21,13 @@ jobs:
     - name: Login Docker Hub
       env:
         DOCKERHUB_ACCESS_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
-      run: echo ${DOCKERHUB_ACCESS_TOKEN} | docker login --username yujunz --password-stdin
+        QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+      run: |
+        echo ${DOCKERHUB_ACCESS_TOKEN} | docker login --username yujunz --password-stdin
+        echo ${QUAY_PASSWORD} | docker login quay.io --username yujunz --password-stdin
 
     - name: Build
       env:
-        IMAGE_NAMESPACE: yujunz
+        IMAGE_NAMESPACE: quay.io/yujunz
         DOCKER_PUSH: true
       run: make image
