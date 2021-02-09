@@ -30,4 +30,4 @@ jobs:
       env:
         IMAGE_NAMESPACE: quay.io/yujunz
         DOCKER_PUSH: true
-      run: make image
+      run: IMAGE_TAG=$(cat VERSION)-$(git describe --always --dirty) make image
