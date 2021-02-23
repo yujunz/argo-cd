@@ -163,7 +163,7 @@ func TestImmutableChange(t *testing.T) {
 		Expect(OperationPhaseIs(OperationFailed)).
 		Expect(SyncStatusIs(SyncStatusCodeOutOfSync)).
 		Expect(ResourceResultNumbering(1)).
-		Expect(ResourceResultIs(ResourceResult{
+		Expect(ResourceResultMatches(ResourceResult{
 			Kind:      "Service",
 			Version:   "v1",
 			Namespace: DeploymentNamespace(),
@@ -171,7 +171,7 @@ func TestImmutableChange(t *testing.T) {
 			SyncPhase: "Sync",
 			Status:    "SyncFailed",
 			HookPhase: "Failed",
-			Message:   fmt.Sprintf(`Service "my-service" is invalid: spec.clusterIP: Invalid value: "%s": field is immutable`, ip2),
+			Message:   `Service "my-service" is invalid`,
 		})).
 		// now we can do this will a force
 		Given().
@@ -1540,5 +1540,32 @@ func TestAppLogs(t *testing.T) {
 			out, err := RunCli("app", "logs", app.Name, "--kind", "Service")
 			assert.NoError(t, err)
 			assert.NotContains(t, out, "Hi")
+		})
+}
+
+func TestAppWaitOperationInProgress(t *testing.T) {
+	Given(t).
+		And(func() {
+			SetResourceOverrides(map[string]ResourceOverride{
+				"batch/Job": {
+					HealthLua: `return { status = 'Running' }`,
+				},
+				"apps/Deployment": {
+					HealthLua: `return { status = 'Suspended' }`,
+				},
+			})
+		}).
+		Async(true).
+		Path("hook-and-deployment").
+		When().
+		Create().
+		Sync().
+		Then().
+		// stuck in running state
+		Expect(OperationPhaseIs(OperationRunning)).
+		When().
+		And(func() {
+			_, err := RunCli("app", "wait", Name(), "--suspended")
+			errors.CheckError(err)
 		})
 }
