@@ -7,12 +7,13 @@ apt-get update && \
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 export CURL_ARGS="-sSL --fail"
+export BIN=/usr/local/bin
 
 export SOPS_VERSION=v3.6.1
-export HELMFILE_VERSION=v0.134.1
 
-curl ${CURL_ARGS} -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux
-chmod +x /usr/local/bin/sops
+curl ${CURL_ARGS} -o ${BIN}/sops https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux
+chmod +x ${BIN}/sops
 
-curl ${CURL_ARGS} -o /usr/local/bin/helmfile https://github.com/roboll/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_linux_amd64
-chmod +x /usr/local/bin/helmfile
+export HELMFILE_VERSION=0.138.4-3-g90de61a
+export HELMFILE_RELEASE=https://github.com/yujunz/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_Linux_x86_64.tar.gz
+curl ${CURL_ARGS} ${HELMFILE_RELEASE} | tar zxf - -C ${BIN} helmfile
